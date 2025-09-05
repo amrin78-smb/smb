@@ -1,8 +1,8 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Dexie from "https://cdn.jsdelivr.net/npm/dexie@4.0.8/+esm";
-import jsPDF from "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm";
-import autoTable from "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.1/+esm";
+import jsPDF from "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.es.min.js";
+import "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.1/dist/jspdf.plugin.autotable.min.js";
 
 /* =====================================
    Dexie (IndexedDB) database
