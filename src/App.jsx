@@ -1,3 +1,4 @@
+
 import React, { useEffect, useMemo, useState } from "react";
 import Dexie from "https://cdn.jsdelivr.net/npm/dexie@4.0.8/+esm";
 import jsPDF from "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm";
@@ -8,26 +9,41 @@ import autoTable from "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.1/+esm";
 ===================================== */
 const db = new Dexie("smb_local_orders_db");
 
-// v1 schema
+/**
+ * v1: base
+ * v2: add orderCode
+ * v3: add deliveryFee
+ */
 db.version(1).stores({
   products: "++id,name,price",
   customers: "++id,name,phone,address,grabwin,grabcar,nationality",
   orders: "++id,date,customerId,total,notes",
   orderItems: "++id,orderId,productId,qty,price",
 });
-
-// v2 schema adds orderCode
 db.version(2).stores({
   products: "++id,name,price",
   customers: "++id,name,phone,address,grabwin,grabcar,nationality",
   orders: "++id,date,customerId,total,notes,orderCode",
   orderItems: "++id,orderId,productId,qty,price",
-}).upgrade(async tx => {
+}).upgrade(async (tx) => {
   const orders = await tx.table("orders").toArray();
   for (const o of orders) {
     if (!o.orderCode) {
       const code = await generateOrderCode(o.date, tx);
       await tx.table("orders").update(o.id, { orderCode: code });
+    }
+  }
+});
+db.version(3).stores({
+  products: "++id,name,price",
+  customers: "++id,name,phone,address,grabwin,grabcar,nationality",
+  orders: "++id,date,customerId,total,deliveryFee,notes,orderCode",
+  orderItems: "++id,orderId,productId,qty,price",
+}).upgrade(async (tx) => {
+  const orders = await tx.table("orders").toArray();
+  for (const o of orders) {
+    if (typeof o.deliveryFee === "undefined") {
+      await tx.table("orders").update(o.id, { deliveryFee: 0 });
     }
   }
 });
@@ -44,7 +60,7 @@ async function ensureSeed() {
   if (ccount === 0) {
     await db.customers.bulkAdd([
       { name: "Walk-in", phone: "", address: "", grabwin: "", grabcar: "", nationality: "" },
-      { name: "Ice", phone: "080-333-4444", address: "", grabwin: "", grabcar: "", nationality: "TH" },
+      { name: "Ice", phone: "080-333-4444", address: "Bangkok", grabwin: "", grabcar: "", nationality: "TH" },
     ]);
   }
 }
@@ -54,9 +70,7 @@ async function ensureSeed() {
 ===================================== */
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const monthKey = (d) => (d || "").slice(0, 7);
-
-const formatTHB = (n) =>
-  new Intl.NumberFormat("en-TH", { style: "currency", currency: "THB" }).format(Number(n || 0));
+const formatTHB = (n) => new Intl.NumberFormat("en-TH", { style: "currency", currency: "THB" }).format(Number(n || 0));
 
 function ddmmyy(dateStr) {
   if (!dateStr) return "";
@@ -66,8 +80,7 @@ function ddmmyy(dateStr) {
 async function generateOrderCode(dateStr, tx) {
   const t = tx ? tx.table("orders") : db.orders;
   const sameDay = await t.where("date").equals(dateStr).toArray();
-  const next = sameDay.length + 1;
-  return `${ddmmyy(dateStr)}_${next}`;
+  return `${ddmmyy(dateStr)}_${sameDay.length + 1}`;
 }
 
 function downloadText(filename, text) {
@@ -137,55 +150,57 @@ const Label = ({ children }) => (<label className="text-sm text-gray-600">{child
    Dashboard
 ===================================== */
 function Dashboard() {
-  const [stats, setStats] = useState({ orders: 0, revenue: 0, items: 0 });
   const [todayOrders, setTodayOrders] = useState([]);
 
   useEffect(() => {
     (async () => {
       await ensureSeed();
       const orders = await db.orders.where("date").equals(todayStr()).toArray();
-      orders.sort((a,b) => a.id - b.id);
-      let revenue = 0, items = 0;
-      for (const o of orders) {
-        revenue += Number(o.total || 0);
-        const its = await db.orderItems.where({ orderId: o.id }).toArray();
-        items += its.reduce((s,it) => s + Number(it.qty || 0), 0);
-      }
-      setStats({ orders: orders.length, revenue, items });
+      orders.sort((a, b) => a.id - b.id);
       setTodayOrders(orders);
     })();
   }, []);
 
+  const totals = useMemo(() => {
+    let revenue = 0;
+    todayOrders.forEach((o) => {
+      revenue += Number(o.total || 0) + Number(o.deliveryFee || 0);
+    });
+    return { orders: todayOrders.length, revenue };
+  }, [todayOrders]);
+
   return (
     <div className="max-w-6xl mx-auto mt-6 grid gap-5">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatCard label="Orders Today" value={stats.orders} />
-        <StatCard label="Items Sold Today" value={stats.items} />
-        <StatCard label="Revenue Today" value={formatTHB(stats.revenue)} />
+        <StatCard label="Orders Today" value={totals.orders} />
+        <StatCard label="Revenue Today" value={formatTHB(totals.revenue)} />
+        <StatCard label="Date" value={todayStr()} />
       </div>
 
-      <Section title="Today’s Orders" right={<div className="text-sm text-gray-500">{todayStr()}</div>}>
+      <Section title="Today’s Orders">
         <table className="min-w-full text-sm">
-          <thead><tr className="text-left border-b">
-            <th className="p-2">Seq</th>
-            <th className="p-2">Order #</th>
-            <th className="p-2">Customer</th>
-            <th className="p-2">Total</th>
-            <th className="p-2">Notes</th>
-          </tr></thead>
+          <thead>
+            <tr className="border-b">
+              <th className="p-2">Order #</th>
+              <th className="p-2">Customer</th>
+              <th className="p-2">Subtotal</th>
+              <th className="p-2">Delivery Fee</th>
+              <th className="p-2">Total</th>
+            </tr>
+          </thead>
           <tbody>
-            {todayOrders.map((o, idx) => <DashboardRow key={o.id} order={o} seq={idx+1} />)}
-            {todayOrders.length === 0 && <tr><td className="p-2 text-gray-500" colSpan={5}>No orders yet today.</td></tr>}
+            {todayOrders.map((o) => <DashboardRow key={o.id} order={o} />)}
+            {todayOrders.length === 0 && <tr><td colSpan={5} className="p-2 text-gray-500">No orders yet today.</td></tr>}
           </tbody>
         </table>
       </Section>
 
       <Section title="How to use">
         <ul className="list-disc pl-6 text-sm text-gray-700 space-y-1">
-          <li>Use <b>Orders</b> to create and review orders.</li>
+          <li>Use <b>Orders</b> to create and review orders. Same customer + same date is consolidated.</li>
           <li>Manage <b>Products</b> and <b>Customers</b>.</li>
           <li>Import/Export CSV and backups in <b>Settings</b>.</li>
-          <li>All data is stored locally (IndexedDB via Dexie).</li>
+          <li>All data is stored locally (IndexedDB via Dexie). No internet database.</li>
         </ul>
       </Section>
     </div>
@@ -197,16 +212,16 @@ const StatCard = ({ label, value }) => (
     <div className="text-2xl font-semibold">{value}</div>
   </div>
 );
-function DashboardRow({ order, seq }) {
+function DashboardRow({ order }) {
   const [custName, setCustName] = useState("");
   useEffect(() => { db.customers.get(order.customerId).then(c => setCustName(c?.name || "")); }, [order.customerId]);
   return (
     <tr className="border-b">
-      <td className="p-2">{seq}</td>
       <td className="p-2">{order.orderCode || order.id}</td>
       <td className="p-2">{custName}</td>
       <td className="p-2">{formatTHB(order.total)}</td>
-      <td className="p-2">{order.notes || ""}</td>
+      <td className="p-2">{formatTHB(order.deliveryFee)}</td>
+      <td className="p-2">{formatTHB(Number(order.total || 0) + Number(order.deliveryFee || 0))}</td>
     </tr>
   );
 }
@@ -220,6 +235,7 @@ function OrderBuilder() {
   const [customerId, setCustomerId] = useState(0);
   const [date, setDate] = useState(() => todayStr());
   const [notes, setNotes] = useState("");
+  const [deliveryFee, setDeliveryFee] = useState(0);
   const [items, setItems] = useState([]);
   const [q, setQ] = useState("");
 
@@ -230,13 +246,17 @@ function OrderBuilder() {
   const [days, setDays] = useState([]);
   const [selectedDay, setSelectedDay] = useState("");
   const [dayOrders, setDayOrders] = useState([]);
-  const dayTotal = useMemo(() => dayOrders.reduce((s, o) => s + Number(o.total || 0), 0), [dayOrders]);
+  const [dayDetails, setDayDetails] = useState({}); // orderId -> items
+  const daySubtotal = useMemo(() => dayOrders.reduce((s,o)=>s + Number(o.total||0), 0), [dayOrders]);
+  const dayDelivery = useMemo(() => dayOrders.reduce((s,o)=>s + Number(o.deliveryFee||0), 0), [dayOrders]);
+  const dayGrand = useMemo(() => daySubtotal + dayDelivery, [daySubtotal, dayDelivery]);
 
   // edit modal
   const [editOpen,setEditOpen]=useState(false);
   const [editOrder,setEditOrder]=useState(null);
   const [editItems,setEditItems]=useState([]);
   const [editTotal,setEditTotal]=useState(0);
+  const [editDeliveryFee,setEditDeliveryFee]=useState(0);
   const [editQ, setEditQ] = useState("");
 
   useEffect(() => {
@@ -256,8 +276,7 @@ function OrderBuilder() {
 
   useEffect(() => {
     (async () => {
-      if (!selectedMonth) { setDays([]); setSelectedDay(""); setDayOrders([]); return; }
-      // Pull all orders in month; derive unique days
+      if (!selectedMonth) { setDays([]); setSelectedDay(""); setDayOrders([]); setDayDetails({}); return; }
       const list = await db.orders.where("date").between(`${selectedMonth}-00`, `${selectedMonth}-99`).toArray();
       const uniqDays = Array.from(new Set(list.map(o => o.date))).sort((a, b) => b.localeCompare(a));
       setDays(uniqDays);
@@ -265,15 +284,31 @@ function OrderBuilder() {
     })();
   }, [selectedMonth]);
 
-  // FIX: more robust day fetch (filter all orders by exact date)
   useEffect(() => {
     (async () => {
-      if (!selectedDay) { setDayOrders([]); return; }
+      if (!selectedDay) { setDayOrders([]); setDayDetails({}); return; }
       const all = await db.orders.toArray();
       const list = all.filter(o => o.date === selectedDay).sort((a,b)=>a.id-b.id);
       setDayOrders(list);
+
+      // fetch items for each order to display details
+      const details = {};
+      for (const o of list) {
+        details[o.id] = await loadItemsForOrder(o.id);
+      }
+      setDayDetails(details);
     })();
   }, [selectedDay]);
+
+  async function loadItemsForOrder(orderId){
+    const its = await db.orderItems.where({ orderId }).toArray();
+    const withNames = [];
+    for (const it of its) {
+      const p = await db.products.get(it.productId);
+      withNames.push({ ...it, name: p?.name || "(deleted)" });
+    }
+    return withNames;
+  }
 
   const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products]);
   const total = useMemo(() => items.reduce((s, it) => s + (Number(it.qty || 0) * Number(it.price || 0)), 0), [items]);
@@ -291,18 +326,14 @@ function OrderBuilder() {
   const updateItem = (i, patch) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, ...patch } : it));
   const removeItem = (i) => setItems(prev => prev.filter((_, idx) => idx !== i));
 
-  // Consolidating save + orderCode
+  // Save order (consolidate by customer + date)
   async function saveOrder() {
     try {
       if (!customerId) return alert("Select a customer");
       if (items.length === 0) return alert("Add at least one item");
 
       const custId = Number(customerId);
-
-      const existing = await db.orders
-        .where("date").equals(date)
-        .and(o => o.customerId === custId)
-        .first();
+      const existing = await db.orders.where("date").equals(date).and(o => o.customerId === custId).first();
 
       if (existing) {
         await db.transaction('rw', db.orders, db.orderItems, async () => {
@@ -324,19 +355,20 @@ function OrderBuilder() {
           const merged = await db.orderItems.where({ orderId: existing.id }).toArray();
           const newTotal = merged.reduce((s, it) => s + Number(it.qty || 0) * Number(it.price || 0), 0);
           const newNotes = notes ? (existing.notes ? `${existing.notes} | ${notes}` : notes) : (existing.notes || "");
-          await db.orders.update(existing.id, { total: newTotal, notes: newNotes });
+          await db.orders.update(existing.id, { total: newTotal, notes: newNotes, deliveryFee: Number(deliveryFee || 0) });
         });
-        await refreshAll(date);
+        await afterSaveRefresh(date);
         setItems([]);
         alert(`Order consolidated into #${existing.orderCode || existing.id}`);
         return;
       }
 
       const orderCode = await generateOrderCode(date);
-      const oid = await db.orders.add({ date, customerId: custId, total, notes, orderCode });
+      const oid = await db.orders.add({ date, customerId: custId, total, deliveryFee: Number(deliveryFee || 0), notes, orderCode });
       await db.orderItems.bulkAdd(items.map(it => ({ orderId: oid, productId: it.productId, qty: Number(it.qty), price: Number(it.price) })));
-      await refreshAll(date);
+      await afterSaveRefresh(date);
       setItems([]);
+      setDeliveryFee(0);
       alert(`Order saved as #${orderCode}`);
     } catch (err) {
       console.error(err);
@@ -344,23 +376,39 @@ function OrderBuilder() {
     }
   }
 
-  async function refreshAll(focusDate){
+  async function afterSaveRefresh(focusDate){
+    // refresh recent list
     setRecentOrders(await db.orders.orderBy("id").toArray());
+    // update calendars
     const m = monthKey(focusDate);
-    if(!months.includes(m)) setMonths(prev=>[m,...prev]);
+    const inMonth = await db.orders.where("date").between(`${m}-00`, `${m}-99`).toArray();
+    const newDays = Array.from(new Set(inMonth.map(o => o.date))).sort((a,b)=>b.localeCompare(a));
+    setMonths(prev => (prev.includes(m) ? prev : [m, ...prev]));
+    setDays(newDays);
     setSelectedMonth(m);
     setSelectedDay(focusDate);
+    // refresh day orders + details
+    const list = await db.orders.where("date").equals(focusDate).toArray();
+    list.sort((a,b)=>a.id-b.id);
+    setDayOrders(list);
+    const details = {};
+    for (const o of list) details[o.id] = await loadItemsForOrder(o.id);
+    setDayDetails(details);
   }
 
   async function exportOrdersCSV() {
-    const rows = [["OrderCode","Date","Customer","Item","Qty","UnitPrice","LineTotal","Notes"]];
+    const rows = [["OrderCode","Date","Customer","Subtotal","DeliveryFee","Item","Qty","UnitPrice","LineTotal","Notes"]];
     const orders = await db.orders.orderBy("id").toArray();
     for (const o of orders) {
       const cust = await db.customers.get(o.customerId);
       const its = await db.orderItems.where({ orderId: o.id }).toArray();
-      for (const it of its) {
-        const p = await db.products.get(it.productId);
-        rows.push([o.orderCode || o.id, o.date, cust?.name || "", p?.name || "", it.qty, it.price, (it.qty * it.price).toFixed(2), o.notes || ""]);
+      if (its.length === 0) {
+        rows.push([o.orderCode || o.id, o.date, cust?.name || "", o.total || 0, o.deliveryFee || 0, "", "", "", "", o.notes || ""]);
+      } else {
+        for (const it of its) {
+          const p = await db.products.get(it.productId);
+          rows.push([o.orderCode || o.id, o.date, cust?.name || "", o.total || 0, o.deliveryFee || 0, p?.name || "", it.qty, it.price, (it.qty * it.price).toFixed(2), o.notes || ""]);
+        }
       }
     }
     downloadText("orders.csv", toCSV(rows));
@@ -372,6 +420,7 @@ function OrderBuilder() {
     setEditOrder({...order});
     setEditItems(mapped);
     setEditTotal(mapped.reduce((s,it)=>s+(Number(it.qty||0)*Number(it.price||0)),0));
+    setEditDeliveryFee(Number(order.deliveryFee || 0));
     setEditQ("");
     setEditOpen(true);
   }
@@ -404,13 +453,13 @@ function OrderBuilder() {
       if(!editOrder.customerId) return alert("Select a customer");
       if(editItems.length===0) return alert("Order needs at least one item");
       await db.transaction('rw', db.orders, db.orderItems, async ()=>{
-        await db.orders.update(editOrder.id, { date:editOrder.date, customerId:Number(editOrder.customerId), notes:editOrder.notes||"", total:editTotal });
+        await db.orders.update(editOrder.id, { date:editOrder.date, customerId:Number(editOrder.customerId), notes:editOrder.notes||"", total:editTotal, deliveryFee:Number(editDeliveryFee||0) });
         const existing = await db.orderItems.where({orderId:editOrder.id}).primaryKeys();
         if(existing.length) await db.orderItems.bulkDelete(existing);
         await db.orderItems.bulkAdd(editItems.map(it=>({ orderId:editOrder.id, productId:it.productId, qty:Number(it.qty), price:Number(it.price) })));
       });
       setEditOpen(false);
-      await refreshAll(editOrder.date);
+      await afterSaveRefresh(editOrder.date);
       alert("Order updated");
     }catch(err){ console.error(err); alert("Failed to update: "+(err?.message||String(err))); }
   }
@@ -422,38 +471,23 @@ function OrderBuilder() {
       if (keys.length) await db.orderItems.bulkDelete(keys);
       await db.orders.delete(order.id);
     });
-    setDayOrders(prev => prev.filter(o => o.id !== order.id));
-    setRecentOrders(prev => prev.filter(o => o.id !== order.id));
-    await recomputeCalendarsAfterChange(order.date);
-  }
-  async function recomputeCalendarsAfterChange(focusDate) {
-    const m = monthKey(focusDate);
-    const inMonth = await db.orders.where("date").between(`${m}-00`, `${m}-99`).toArray();
-    const newDays = Array.from(new Set(inMonth.map(o => o.date))).sort((a, b) => b.localeCompare(a));
-    if (newDays.length === 0) {
-      setMonths(prev => {
-        const next = prev.filter(x => x !== m);
-        if (selectedMonth === m) { setSelectedMonth(next[0] || ""); setSelectedDay(""); }
-        return next;
-      });
-      return;
-    }
-    setDays(newDays);
-    if (!newDays.includes(selectedDay)) setSelectedDay(newDays[0]);
+    await afterSaveRefresh(order.date);
   }
 
+  // ===== UI =====
   return (
     <>
       <Section title="Create Order" right={<Button onClick={exportOrdersCSV}>Export Orders CSV</Button>}>
         <div className="grid grid-cols-12 gap-3 mb-4">
           <div className="col-span-3"><Label>Date</Label><Input type="date" value={date} onChange={e => setDate(e.target.value)} /></div>
-          <div className="col-span-5"><Label>Customer</Label>
+          <div className="col-span-4"><Label>Customer</Label>
             <Select value={customerId} onChange={e => setCustomerId(Number(e.target.value))}>
               <option value={0}>-- Select customer --</option>
               {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
           </div>
-          <div className="col-span-4"><Label>Notes</Label><Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional" /></div>
+          <div className="col-span-3"><Label>Delivery Fee</Label><Input type="number" value={deliveryFee} onChange={e=>setDeliveryFee(Number(e.target.value)||0)} /></div>
+          <div className="col-span-2"><Label>Notes</Label><Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional" /></div>
         </div>
         <div className="grid grid-cols-12 gap-3 mb-3">
           <div className="col-span-6">
@@ -489,7 +523,7 @@ function OrderBuilder() {
           </table>
         </div>
         <div className="flex items-center justify-between">
-          <div className="text-lg font-semibold">Total: {formatTHB(total)}</div>
+          <div className="text-lg font-semibold">Subtotal: {formatTHB(total)} &nbsp;•&nbsp; Delivery: {formatTHB(deliveryFee)} &nbsp;•&nbsp; Total: {formatTHB(Number(total)+Number(deliveryFee||0))}</div>
           <Button className="bg-green-100" onClick={saveOrder}>Save Order</Button>
         </div>
 
@@ -497,7 +531,7 @@ function OrderBuilder() {
           <h3 className="font-semibold mb-2">Recent Orders (ASC)</h3>
           <div className="overflow-auto">
             <table className="min-w-full text-sm">
-              <thead><tr className="text-left border-b"><th className="p-2">Seq</th><th className="p-2">Order #</th><th className="p-2">Date</th><th className="p-2">Customer</th><th className="p-2">Total</th></tr></thead>
+              <thead><tr className="text-left border-b"><th className="p-2">Seq</th><th className="p-2">Order #</th><th className="p-2">Date</th><th className="p-2">Customer</th><th className="p-2">Subtotal</th><th className="p-2">Delivery</th><th className="p-2">Total</th></tr></thead>
               <tbody>
                 {recentOrders.map((o, idx) => (
                   <tr key={o.id} className="border-b">
@@ -506,16 +540,19 @@ function OrderBuilder() {
                     <td className="p-2">{o.date}</td>
                     <td className="p-2"><OrderCustomerName id={o.customerId} /></td>
                     <td className="p-2">{formatTHB(o.total)}</td>
+                    <td className="p-2">{formatTHB(o.deliveryFee)}</td>
+                    <td className="p-2">{formatTHB(Number(o.total||0)+Number(o.deliveryFee||0))}</td>
                   </tr>
                 ))}
-                {recentOrders.length === 0 && <tr><td className="p-2 text-gray-500" colSpan={5}>No orders yet.</td></tr>}
+                {recentOrders.length === 0 && <tr><td className="p-2 text-gray-500" colSpan={7}>No orders yet.</td></tr>}
               </tbody>
             </table>
           </div>
         </div>
       </Section>
 
-      <Section title="Browse Orders by Month → Day" right={selectedDay ? <div className="text-sm">Total for {selectedDay}: <b>{formatTHB(dayTotal)}</b></div> : null}>
+      <Section title="Browse Orders by Month → Day"
+        right={selectedDay ? <div className="text-sm">For {selectedDay}: Subtotal <b>{formatTHB(daySubtotal)}</b> • Delivery <b>{formatTHB(dayDelivery)}</b> • Total <b>{formatTHB(dayGrand)}</b></div> : null}>
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-12 md:col-span-4">
             <Label>Month</Label>
@@ -543,6 +580,8 @@ function OrderBuilder() {
                     <th className="p-2">Seq</th>
                     <th className="p-2">Order #</th>
                     <th className="p-2">Customer</th>
+                    <th className="p-2">Subtotal</th>
+                    <th className="p-2">Delivery</th>
                     <th className="p-2">Total</th>
                     <th className="p-2">Notes</th>
                     <th className="p-2">Actions</th>
@@ -550,19 +589,39 @@ function OrderBuilder() {
                 </thead>
                 <tbody>
                   {dayOrders.map((o, idx) => (
-                    <tr key={o.id} className="border-b">
-                      <td className="p-2">{idx + 1}</td>
-                      <td className="p-2">{o.orderCode || o.id}</td>
-                      <td className="p-2"><OrderCustomerName id={o.customerId} /></td>
-                      <td className="p-2">{formatTHB(o.total)}</td>
-                      <td className="p-2">{o.notes || ""}</td>
-                      <td className="p-2 flex gap-2">
-                        <Button onClick={() => openEdit(o)}>View / Edit</Button>
-                        <Button className="bg-red-100" onClick={() => deleteOrder(o)}>Delete</Button>
-                      </td>
-                    </tr>
+                    <React.Fragment key={o.id}>
+                      <tr className="border-b">
+                        <td className="p-2">{idx + 1}</td>
+                        <td className="p-2">{o.orderCode || o.id}</td>
+                        <td className="p-2"><OrderCustomerName id={o.customerId} /></td>
+                        <td className="p-2">{formatTHB(o.total)}</td>
+                        <td className="p-2">{formatTHB(o.deliveryFee)}</td>
+                        <td className="p-2">{formatTHB(Number(o.total||0)+Number(o.deliveryFee||0))}</td>
+                        <td className="p-2">{o.notes || ""}</td>
+                        <td className="p-2 flex gap-2">
+                          <Button onClick={() => openEdit(o)}>View / Edit</Button>
+                          <Button className="bg-red-100" onClick={() => deleteOrder(o)}>Delete</Button>
+                          <Button onClick={() => downloadInvoiceForOrder(o)}>Invoice PDF</Button>
+                        </td>
+                      </tr>
+                      <tr className="bg-gray-50">
+                        <td className="p-2 text-gray-500" colSpan={8}>
+                          <div className="text-xs uppercase tracking-wide mb-1">Items</div>
+                          {(dayDetails[o.id] || []).length === 0 && <div className="text-sm text-gray-500">No items.</div>}
+                          {(dayDetails[o.id] || []).length > 0 && (
+                            <div className="flex flex-wrap gap-3">
+                              {(dayDetails[o.id] || []).map((it, i) => (
+                                <div key={i} className="px-2 py-1 rounded-lg border bg-white">
+                                  {it.name} &times; {it.qty} @ {formatTHB(it.price)} = <b>{formatTHB(it.qty*it.price)}</b>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    </React.Fragment>
                   ))}
-                  {selectedDay && dayOrders.length === 0 && <tr><td className="p-2 text-gray-500" colSpan={6}>No orders that day.</td></tr>}
+                  {selectedDay && dayOrders.length === 0 && <tr><td className="p-2 text-gray-500" colSpan={8}>No orders that day.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -579,12 +638,12 @@ function OrderBuilder() {
             </div>
             <div className="grid grid-cols-12 gap-3 mb-3">
               <div className="col-span-4"><Label>Date</Label><Input type="date" value={editOrder.date} onChange={e=>setEditOrder({...editOrder, date:e.target.value})} /></div>
-              <div className="col-span-5"><Label>Customer</Label>
+              <div className="col-span-4"><Label>Customer</Label>
                 <Select value={editOrder.customerId} onChange={e=>setEditOrder({...editOrder, customerId:Number(e.target.value)})}>
                   {customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
                 </Select>
               </div>
-              <div className="col-span-3"><Label>Notes</Label><Input value={editOrder.notes||""} onChange={e=>setEditOrder({...editOrder, notes:e.target.value})} /></div>
+              <div className="col-span-4"><Label>Delivery Fee</Label><Input type="number" value={editDeliveryFee} onChange={e=>setEditDeliveryFee(Number(e.target.value)||0)} /></div>
             </div>
             <div className="mb-3">
               <Label>Add item</Label>
@@ -618,7 +677,7 @@ function OrderBuilder() {
               </table>
             </div>
             <div className="flex items-center justify-between">
-              <div className="text-lg font-semibold">Total: {formatTHB(editTotal)}</div>
+              <div className="text-lg font-semibold">Subtotal: {formatTHB(editTotal)} &nbsp;•&nbsp; Delivery: {formatTHB(editDeliveryFee)} &nbsp;•&nbsp; Total: {formatTHB(Number(editTotal)+Number(editDeliveryFee||0))}</div>
               <Button className="bg-green-100" onClick={saveEdit}>Save Changes</Button>
             </div>
           </div>
@@ -632,9 +691,17 @@ function OrderCustomerName({ id }) {
   useEffect(() => { let ok = true; db.customers.get(id).then(c => ok && setName(c?.name || "")); return () => { ok = false; }; }, [id]);
   return <span>{name}</span>;
 }
+async function downloadInvoiceForOrder(order){
+  try{
+    await generateInvoice(order);
+  }catch(e){
+    console.error(e);
+    alert("Failed to generate invoice: " + (e?.message || String(e)));
+  }
+}
 
 /* =====================================
-   Invoices (new tab) — pick month/day/order and generate PDF
+   Invoices (tab) — optional picker view
 ===================================== */
 function Invoices() {
   const [months, setMonths] = useState([]);
@@ -643,9 +710,6 @@ function Invoices() {
   const [selectedDay, setSelectedDay] = useState("");
   const [orders, setOrders] = useState([]);
   const [selectedOrderId, setSelectedOrderId] = useState(0);
-  const [items, setItems] = useState([]);
-  const [orderInfo, setOrderInfo] = useState(null);
-  const [customer, setCustomer] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -676,58 +740,14 @@ function Invoices() {
     })();
   }, [selectedDay]);
 
-  useEffect(() => {
-    (async () => {
-      if (!selectedOrderId) { setItems([]); setOrderInfo(null); setCustomer(null); return; }
-      const o = await db.orders.get(selectedOrderId);
-      const its = await db.orderItems.where({ orderId: selectedOrderId }).toArray();
-      const mapped = [];
-      for (const it of its) {
-        const p = await db.products.get(it.productId);
-        mapped.push({ name: p?.name || "", qty: it.qty, price: it.price, total: (it.qty * it.price) });
-      }
-      const cust = await db.customers.get(o.customerId);
-      setOrderInfo(o);
-      setItems(mapped);
-      setCustomer(cust);
-    })();
-  }, [selectedOrderId]);
-
-  function downloadInvoice() {
-    if (!orderInfo) return;
-    const doc = new jsPDF();
-    const title = "Selera Malaysia Bangkok — Invoice";
-    doc.setFontSize(16);
-    doc.text(title, 14, 16);
-    doc.setFontSize(11);
-    doc.text(`Order: ${orderInfo.orderCode || orderInfo.id}`, 14, 24);
-    doc.text(`Date: ${orderInfo.date}`, 14, 30);
-    if (customer) {
-      doc.text(`Customer: ${customer.name}`, 14, 36);
-      const addr = [customer.phone, customer.address].filter(Boolean).join(" | ");
-      if (addr) doc.text(addr, 14, 42);
-    }
-
-    autoTable(doc, {
-      startY: 48,
-      head: [['Item', 'Qty', 'Unit Price', 'Line Total']],
-      body: items.map(it => [it.name, String(it.qty), String(it.price), String((it.total).toFixed(2))]),
-      theme: 'grid',
-      styles: { fontSize: 11 },
-      headStyles: { fillColor: [230,230,230] },
-    });
-
-    const finalY = doc.lastAutoTable.finalY || 48;
-    doc.setFontSize(12);
-    doc.text(`Notes: ${orderInfo.notes || "-"}`, 14, finalY + 10);
-    doc.setFontSize(14);
-    doc.text(`Total: ${formatTHB(orderInfo.total)}`, 14, finalY + 20);
-
-    doc.save(`invoice_${orderInfo.orderCode || orderInfo.id}.pdf`);
+  async function download(){
+    if(!selectedOrderId) return;
+    const order = await db.orders.get(selectedOrderId);
+    await downloadInvoiceForOrder(order);
   }
 
   return (
-    <Section title="Invoices — Generate PDF">
+    <Section title="Invoices — Generate PDF from an order">
       <div className="grid grid-cols-12 gap-4 mb-4">
         <div className="col-span-4">
           <Label>Month</Label>
@@ -749,30 +769,12 @@ function Invoices() {
         <div className="col-span-4">
           <Label>Order</Label>
           <Select value={selectedOrderId} onChange={e=>setSelectedOrderId(Number(e.target.value))}>
-            {orders.map(o => <option key={o.id} value={o.id}>{o.orderCode || o.id} — {formatTHB(o.total)}</option>)}
+            {orders.map(o => <option key={o.id} value={o.id}>{o.orderCode || o.id} — {formatTHB(Number(o.total||0)+Number(o.deliveryFee||0))}</option>)}
           </Select>
         </div>
       </div>
-
-      <div className="overflow-auto mb-3">
-        <table className="min-w-full text-sm">
-          <thead><tr className="text-left border-b"><th className="p-2">Item</th><th className="p-2">Qty</th><th className="p-2">Unit Price</th><th className="p-2">Line Total</th></tr></thead>
-          <tbody>
-            {items.map((it,i)=>(
-              <tr key={i} className="border-b">
-                <td className="p-2">{it.name}</td>
-                <td className="p-2">{it.qty}</td>
-                <td className="p-2">{formatTHB(it.price)}</td>
-                <td className="p-2">{formatTHB(it.total)}</td>
-              </tr>
-            ))}
-            {items.length===0 && <tr><td className="p-2 text-gray-500" colSpan={4}>No items for selected order.</td></tr>}
-          </tbody>
-        </table>
-      </div>
-
       <div className="flex justify-end">
-        <Button className="bg-green-100" onClick={downloadInvoice} disabled={!orderInfo}>Download PDF</Button>
+        <Button className="bg-green-100" onClick={download} disabled={!selectedOrderId}>Download PDF</Button>
       </div>
     </Section>
   );
@@ -979,6 +981,92 @@ function Customers() {
 }
 
 /* =====================================
+   Invoice generation (jsPDF + AutoTable)
+===================================== */
+async function getBase64FromUrl(url) {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
+}
+async function generateInvoice(order) {
+  const doc = new jsPDF("p", "mm", "a4");
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  // Logo (top-right)
+  try {
+    const logoData = await getBase64FromUrl("/logo.png");
+    doc.addImage(logoData, "PNG", pageWidth - 50, 10, 40, 25);
+  } catch (e) {
+    // ignore if logo fails
+  }
+
+  // Header
+  doc.setFontSize(20);
+  doc.text("INVOICE", 14, 20);
+
+  // Business info
+  doc.setFontSize(11);
+  doc.text("Selera Malaysia Bangkok", 14, 30);
+  doc.text("Phone: +66 9 8284 1569", 14, 36);
+
+  // Customer
+  const cust = await db.customers.get(order.customerId);
+  let y = 50;
+  doc.setFontSize(12);
+  doc.text("Bill To:", 14, y); y += 6;
+  doc.setFontSize(11);
+  if (cust?.name) { doc.text(cust.name, 14, y); y += 6; }
+  if (cust?.phone) { doc.text("Phone: " + cust.phone, 14, y); y += 6; }
+  if (cust?.address) { doc.text("Address: " + cust.address, 14, y); y += 6; }
+
+  // Invoice info
+  y = 50;
+  doc.text(`Invoice #: ${order.orderCode || order.id}`, pageWidth/2, y); y += 6;
+  doc.text(`Date: ${order.date}`, pageWidth/2, y);
+
+  // Items
+  const its = await db.orderItems.where({ orderId: order.id }).toArray();
+  const rows = [];
+  for (const it of its) {
+    const p = await db.products.get(it.productId);
+    rows.push([p?.name || "", String(it.qty), String(it.price), String((it.qty * it.price).toFixed(2))]);
+  }
+  autoTable(doc, {
+    startY: 90,
+    head: [["Description", "Qty", "Unit Price", "Amount"]],
+    body: rows,
+    styles: { fontSize: 11 },
+    headStyles: { fillColor: [30, 64, 175], textColor: 255 }, // blue header
+    theme: "grid",
+  });
+
+  const finalY = doc.lastAutoTable.finalY + 8;
+  doc.setFontSize(12);
+  doc.text(`Subtotal: ${formatTHB(order.total)}`, 14, finalY);
+  doc.text(`Delivery Fee: ${formatTHB(order.deliveryFee)}`, 14, finalY + 6);
+  doc.setFontSize(14);
+  doc.text(`TOTAL: ${formatTHB(Number(order.total||0) + Number(order.deliveryFee||0))}`, 14, finalY + 16);
+
+  // Payment info
+  const payY = finalY + 30;
+  doc.setFontSize(12);
+  doc.text("Payment:", 14, payY);
+  doc.setFontSize(11);
+  doc.text("Krungsri / Bank Ayudhaya : 511 1345 714", 14, payY + 6);
+  doc.text("PromptPay: 098 284 1569", 14, payY + 12);
+
+  // Footer
+  doc.setFontSize(11);
+  doc.text("Thank you for your order!", 14, payY + 24);
+
+  doc.save(`invoice_${order.orderCode || order.id}.pdf`);
+}
+
+/* =====================================
    App Shell
 ===================================== */
 const Tabs = { DASHBOARD: "Dashboard", ORDERS: "Orders", PRODUCTS: "Products", CUSTOMERS: "Customers", INVOICES: "Invoices", SETTINGS: "Settings" };
@@ -992,11 +1080,14 @@ export default function App() {
       <header className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-5 py-3 flex items-center justify-between">
           <div className="font-bold text-lg">Selera Malaysia Bangkok Inventory and Ordering Portal</div>
-          <nav className="flex gap-2">
-            {Object.values(Tabs).map(t => (
-              <Button key={t} className={tab===t ? "bg-blue-100" : ""} onClick={()=>setTab(t)}>{t}</Button>
-            ))}
-          </nav>
+          <div className="flex items-center gap-4">
+            <nav className="flex gap-2">
+              {Object.values(Tabs).map(t => (
+                <Button key={t} className={tab===t ? "bg-blue-100" : ""} onClick={()=>setTab(t)}>{t}</Button>
+              ))}
+            </nav>
+            <img src="/logo.png" alt="Selera Malaysia Bangkok" className="h-10" />
+          </div>
         </div>
       </header>
       <main className="px-5 pb-10">
