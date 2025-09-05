@@ -1,7 +1,7 @@
-import { neon } from "@netlify/neon";
+import { neon } from "@neondatabase/serverless";
 
-// reads NETLIFY_DATABASE_URL automatically
-const sql = neon();
+// The Netlify Neon add-on provides NETLIFY_DATABASE_URL automatically
+const sql = neon(process.env.NETLIFY_DATABASE_URL);
 
 export const handler = async () => {
   try {
