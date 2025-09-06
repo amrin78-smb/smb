@@ -48,7 +48,11 @@ export const handler = async (event) => {
       const date = queryStringParameters?.date;        // expects YYYY-MM-DD
 
       if (months) {
-        const rows = await sql`select distinct to_char(date, 'YYYY-MM') as m from orders order by m desc`;
+        const rows = await sql`
+          select distinct to_char(date, 'YYYY-MM') as m
+          from orders
+          order by m desc
+        `;
         return ok(rows.map((r) => r.m));
       }
 
@@ -107,8 +111,9 @@ export const handler = async (event) => {
 
     // -------- POST: create or CONSOLIDATE an order --------
     if (httpMethod === "POST") {
+      // NOTE: do NOT default deliveryFee here; keep undefined unless client sends it.
       const body = JSON.parse(event.body || "{}");
-      const { date, customerId, items = [], deliveryFee = 0, notes = "" } = body;
+      const { date, customerId, items = [], deliveryFee, notes = "" } = body;
 
       if (!date) return err(400, "date is required");
       if (!customerId) return err(400, "customerId is required");
@@ -156,16 +161,24 @@ export const handler = async (event) => {
           from order_items
           where order_id = ${o.id}
         `;
-        const fee = Number(deliveryFee ?? o.deliveryFee ?? 0);
+
+        // ✅ Only overwrite delivery fee if the client explicitly sends a value
+        const fee =
+          (deliveryFee === undefined || deliveryFee === null)
+            ? Number(o.deliveryFee ?? 0)
+            : Number(deliveryFee);
+
         const newNotes = o.notes ? (notes ? `${o.notes} | ${notes}` : o.notes) : (notes || "");
+
         await sql`
           update orders
-          set subtotal = ${subtotal},
+          set subtotal     = ${subtotal},
               delivery_fee = ${fee},
-              total = ${Number(subtotal) + Number(fee)},
-              notes = ${newNotes}
+              total        = ${Number(subtotal) + Number(fee)},
+              notes        = ${newNotes}
           where id = ${o.id}
         `;
+
         const [updated] = await sql`
           select id, date, customer_id as "customerId", subtotal, delivery_fee as "deliveryFee", total, notes, order_code as "orderCode"
           from orders where id = ${o.id}
@@ -174,13 +187,19 @@ export const handler = async (event) => {
       }
 
       // create a brand new order
-      const [{ count }] = await sql`select count(*)::int as count from orders where date = ${date}`;
+      const [{ count }] = await sql`
+        select count(*)::int as count
+        from orders
+        where date = ${date}
+      `;
       const seq = Number(count) + 1;
       const orderCode = `${ddmmyy(date)}_${seq}`;
 
+      const initialFee = toNumber(deliveryFee); // new orders can default to 0
+
       const [created] = await sql`
         insert into orders (date, customer_id, subtotal, delivery_fee, total, notes, order_code)
-        values (${date}, ${customerId}, 0, ${toNumber(deliveryFee)}, 0, ${notes}, ${orderCode})
+        values (${date}, ${customerId}, 0, ${initialFee}, 0, ${notes}, ${orderCode})
         returning id, date, customer_id as "customerId", subtotal, delivery_fee as "deliveryFee", total, notes, order_code as "orderCode"
       `;
 
@@ -195,8 +214,12 @@ export const handler = async (event) => {
         select coalesce(sum(qty * price), 0) as subtotal
         from order_items where order_id = ${created.id}
       `;
-      const total = Number(subtotal) + Number(deliveryFee || 0);
-      await sql`update orders set subtotal = ${subtotal}, total = ${total} where id = ${created.id}`;
+      const total = Number(subtotal) + Number(initialFee || 0);
+      await sql`
+        update orders
+        set subtotal = ${subtotal}, total = ${total}
+        where id = ${created.id}
+      `;
 
       const [final] = await sql`
         select id, date, customer_id as "customerId", subtotal, delivery_fee as "deliveryFee", total, notes, order_code as "orderCode"
@@ -254,4 +277,3 @@ export const handler = async (event) => {
     return err(500, { error: e.message || "Server error" });
   }
 };
-
