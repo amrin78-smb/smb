@@ -7,6 +7,7 @@ import Orders from "./components/Orders";
 import Invoices from "./components/Invoices";
 import Settings from "./components/Settings";
 
+/* ---------- Shared UI bits ---------- */
 const Section = ({ title, right, children }) => (
   <div className="w-full max-w-6xl mx-auto my-4 sm:my-6 p-4 sm:p-5 rounded-2xl shadow border bg-white">
     <div className="flex items-center justify-between gap-2 mb-3 sm:mb-4">
@@ -33,6 +34,7 @@ const Button = ({ children, className = "", ...props }) => (
   </button>
 );
 
+/* ---------- Dashboard ---------- */
 function Dashboard() {
   const [orders, setOrders] = useState([]);
 
@@ -103,7 +105,7 @@ function Dashboard() {
           </li>
           <li>Manage <b>Products</b> and <b>Customers</b>.</li>
           <li>Invoices tab lets you generate a PDF invoice for any order.</li>
-          <li>All data is stored in <b>Neon Postgres</b> (via Netlify Functions).</li>
+          <li>Data is stored in <b>Neon Postgres</b> (via Netlify Functions).</li>
           <li>Use <b>Settings</b> to import CSV for Products and Customers.</li>
         </ul>
       </Section>
@@ -111,6 +113,7 @@ function Dashboard() {
   );
 }
 
+/* ---------- Tabs ---------- */
 const Tabs = {
   DASHBOARD: "Dashboard",
   ORDERS: "Orders",
@@ -120,6 +123,7 @@ const Tabs = {
   SETTINGS: "Settings",
 };
 
+/* ---------- App ---------- */
 export default function App() {
   const [tab, setTab] = useState(Tabs.DASHBOARD);
 
@@ -127,28 +131,31 @@ export default function App() {
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
       <header className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-3 sm:px-5 py-2.5 sm:py-3 flex items-center justify-between gap-2">
-          <div className="font-bold text-base sm:text-lg leading-tight">
-            Selera Malaysia Bangkok Inventory and Ordering Portal
+        <div className="max-w-6xl mx-auto px-3 sm:px-5 py-2.5 sm:py-3">
+          {/* Row: title + logo */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="font-bold text-base sm:text-lg leading-tight">
+              Selera Malaysia Bangkok Inventory and Ordering Portal
+            </div>
+            <img
+              src="/logo.png"
+              alt="Selera Malaysia Bangkok"
+              className="h-8 sm:h-10 shrink-0"
+            />
           </div>
 
-          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-            {/* Mobile: horizontal scroll tabs */}
-            <nav className="flex gap-2 overflow-x-auto whitespace-nowrap no-scrollbar max-w-[60vw] sm:max-w-none">
-              {Object.values(Tabs).map((t) => (
-                <Button
-                  key={t}
-                  className={
-                    "shrink-0 " + (tab === t ? "bg-blue-100" : "")
-                  }
-                  onClick={() => setTab(t)}
-                >
-                  {t}
-                </Button>
-              ))}
-            </nav>
-            <img src="/logo.png" alt="Selera Malaysia Bangkok" className="h-8 sm:h-10 shrink-0" />
-          </div>
+          {/* Row: tabs/nav (moved below title/logo) */}
+          <nav className="mt-2 flex gap-2 overflow-x-auto whitespace-nowrap no-scrollbar">
+            {Object.values(Tabs).map((t) => (
+              <Button
+                key={t}
+                className={`shrink-0 ${tab === t ? "bg-blue-100" : ""}`}
+                onClick={() => setTab(t)}
+              >
+                {t}
+              </Button>
+            ))}
+          </nav>
         </div>
       </header>
 
@@ -162,6 +169,7 @@ export default function App() {
         {tab === Tabs.SETTINGS && <Settings />}
       </main>
 
+      {/* Small helpers */}
       <style>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
