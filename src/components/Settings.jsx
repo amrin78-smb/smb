@@ -55,8 +55,6 @@ function parseCSVText(text) {
     cell = "";
   };
   const pushRow = () => {
-    // Trim trailing empty row caused by final newline
-    // but keep meaningful empty cells
     rows.push(row.map((c) => (c ?? "").trim()));
     row = [];
   };
@@ -139,7 +137,6 @@ export default function Settings() {
     try {
       const { type, headers, rows } = preview;
 
-      // Map headers to indices
       const idx = (name) => headers.indexOf(name);
       let imported = 0;
 
@@ -157,7 +154,14 @@ export default function Settings() {
           await createProduct({ name, price });
           imported++;
         }
-      } else if (type === "customers") {
+
+        setLog((p) => p + `Imported ${imported} products successfully.\n`);
+        resetPreview();
+        setBusy(false);
+        return;
+      }
+
+      if (type === "customers") {
         // Expect headers: name, phone, address, grabwin, grabcar, nationality
         const iName = idx("name");
         if (iName === -1) throw new Error(`"name" header not found`);
@@ -180,10 +184,66 @@ export default function Settings() {
           await createCustomer(draft);
           imported++;
         }
+
+        setLog((p) => p + `Imported ${imported} customers successfully.\n`);
+        resetPreview();
+        setBusy(false);
+        return;
       }
 
-      setLog((p) => p + `Imported ${imported} ${preview.type} successfully.\n`);
-      resetPreview();
+      if (type === "orders") {
+        // Expect headers: date, customerName, customerPhone, customerAddress, productName, qty, price, deliveryFee, notes
+        const iDate = idx("date");
+        const iCName = idx("customername");
+        const iCPhone = idx("customerphone");
+        const iCAddr = idx("customeraddress");
+        const iPName = idx("productname");
+        const iQty = idx("qty");
+        const iPrice = idx("price");
+        const iFee = idx("deliveryfee");
+        const iNotes = idx("notes");
+
+        const missing = [];
+        if (iDate === -1) missing.push("date");
+        if (iCName === -1) missing.push("customerName");
+        if (iPName === -1) missing.push("productName");
+        if (iQty === -1) missing.push("qty");
+        if (iPrice === -1) missing.push("price");
+        if (missing.length) {
+          throw new Error(`Missing required headers: ${missing.join(", ")}`);
+        }
+
+        const payload = rows.map((r) => ({
+          date: (r[iDate] || "").slice(0, 10),
+          customerName: (r[iCName] || "").trim(),
+          customerPhone: iCPhone >= 0 ? r[iCPhone] || "" : "",
+          customerAddress: iCAddr >= 0 ? r[iCAddr] || "" : "",
+          productName: (r[iPName] || "").trim(),
+          qty: Number(r[iQty] || 0),
+          price: Number(r[iPrice] || 0), // unit price
+          deliveryFee:
+            iFee >= 0
+              ? (r[iFee] === "" || r[iFee] == null ? null : Number(r[iFee]))
+              : null,
+          notes: iNotes >= 0 ? r[iNotes] || "" : "",
+        }));
+
+        const resp = await fetch("/.netlify/functions/import-orders", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data?.error || "Import failed");
+
+        setLog((p) => p + `Orders import: created ${data.created}, merged ${data.merged}, items ${data.itemsInserted}, groups ${data.ordersProcessed}.\n`);
+        resetPreview();
+        setBusy(false);
+        return;
+      }
+
+      // Unknown type fallback
+      throw new Error(`Unsupported import type: ${type}`);
     } catch (e) {
       console.error(e);
       setLog((p) => p + `Import failed: ${e.message}\n`);
@@ -194,32 +254,18 @@ export default function Settings() {
 
   return (
     <div className="max-w-6xl mx-auto mt-6">
+      {/* PRODUCTS */}
       <Section title="Import Products (CSV)">
         <p className="mb-2 text-sm text-gray-600">
           CSV headers required: <b>name,price</b>. If a value contains commas, wrap it in double-quotes, e.g.
           <code className="bg-gray-100 px-1 mx-1">"Sauce, extra spicy"</code>.
         </p>
-        <input
-          type="file"
-          accept=".csv,text/csv"
-          onChange={(e) => handleFile(e.target.files?.[0], "products")}
-        />
-      </Section>
-
-      <Section title="Import Customers (CSV)">
-        <p className="mb-2 text-sm text-gray-600">
-          CSV headers required: <b>name,phone,address,grabwin,grabcar,nationality</b>. Addresses with commas must be quoted,
-          e.g. <code className="bg-gray-100 px-1 mx-1">"Zuellig House, Silom"</code>.
-        </p>
-        <input
-          type="file"
-          accept=".csv,text/csv"
-          onChange={(e) => handleFile(e.target.files?.[0], "customers")}
-        />
-      </Section>
-
-      <Section title="Sample CSV Downloads">
-        <div className="flex gap-4 flex-wrap">
+        <div className="flex items-center gap-3">
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(e) => handleFile(e.target.files?.[0], "products")}
+          />
           <Button
             onClick={() => {
               const blob = new Blob([`name,price\nNasi Lemak,60\nRendang,120\n"Sauce, extra",10`], {
@@ -234,6 +280,21 @@ export default function Settings() {
           >
             Download Products CSV
           </Button>
+        </div>
+      </Section>
+
+      {/* CUSTOMERS */}
+      <Section title="Import Customers (CSV)">
+        <p className="mb-2 text-sm text-gray-600">
+          CSV headers required: <b>name,phone,address,grabwin,grabcar,nationality</b>. Addresses with commas must be quoted,
+          e.g. <code className="bg-gray-100 px-1 mx-1">"Zuellig House, Silom"</code>.
+        </p>
+        <div className="flex items-center gap-3">
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(e) => handleFile(e.target.files?.[0], "customers")}
+          />
           <Button
             onClick={() => {
               const blob = new Blob(
@@ -256,6 +317,48 @@ export default function Settings() {
         </div>
       </Section>
 
+      {/* ORDERS */}
+      <Section title="Import Orders (CSV)">
+        <div className="mb-2 text-sm text-gray-600 space-y-2">
+          <p>
+            CSV headers required:&nbsp;
+            <b>date,customerName,customerPhone,customerAddress,productName,qty,price,deliveryFee,notes</b>
+          </p>
+          <ul className="list-disc ml-5">
+            <li><b>date</b> must be <code>YYYY-MM-DD</code></li>
+            <li>Each row is a <b>line item</b>; rows with same <b>date + customerName</b> are merged into one order</li>
+            <li><b>price</b> is the <b>unit price</b> (not total)</li>
+            <li><b>deliveryFee</b> can be repeated per row; it’s used once per order</li>
+            <li><b>customerName</b> and <b>productName</b> should match existing entries (if not, they will be created)</li>
+          </ul>
+        </div>
+        <div className="flex items-center gap-3">
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(e) => handleFile(e.target.files?.[0], "orders")}
+          />
+          <Button
+            onClick={() => {
+              const sample =
+                "date,customerName,customerPhone,customerAddress,productName,qty,price,deliveryFee,notes\n" +
+                '2025-03-17,Jane Doe,0812345678,"Le Nice Ekammai 63",Nasi Lemak,2,80,50,Walk-in\n' +
+                "2025-03-17,Jane Doe,0812345678,Le Nice Ekammai 63,Apam Balik,1,45,50,\n" +
+                "2025-03-17,Alex Tan,0891112222,Baan Sathorn,Kuih Bingka Ubi,3,35,0,VIP Guest\n";
+              const blob = new Blob([sample], { type: "text/csv" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "sample_orders.csv";
+              a.click();
+            }}
+          >
+            Download Orders CSV
+          </Button>
+        </div>
+      </Section>
+
+      {/* PREVIEW */}
       {preview && (
         <Section
           title={`Preview: ${preview.type} (first ${Math.min(preview.rows.length, 500)} rows)`}
@@ -294,6 +397,7 @@ export default function Settings() {
         </Section>
       )}
 
+      {/* LOGS */}
       <Section title="Logs">
         <pre className="bg-gray-100 p-3 rounded-xl text-sm whitespace-pre-wrap">
           {log || "No imports yet."}
