@@ -36,3 +36,5 @@ export const createOrMergeOrder  = (o) => j("POST", "/orders", o);              
 export const updateOrderAndItems = (o) => j("PUT",  "/orders", o);                  // {id,date,customerId,deliveryFee,notes,items[]}
 export const deleteOrder         = (id) => j("DELETE", `/orders?id=${id}`);
 
+// ➕ NEW: Get a single order (with items) — used in Invoices.jsx
+export const getOrder            = (id) => j("GET", `/orders-get?id=${id}`);
