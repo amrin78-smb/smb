@@ -3,10 +3,10 @@ import { listMonths, listDaysInMonth, listOrdersByDate, listCustomers } from "..
 import { generateInvoicePDF } from "../utils/invoice";
 
 const Section = ({ title, right, children }) => (
-  <div className="w-full max-w-6xl mx-auto my-6 p-5 rounded-2xl shadow border bg-white">
-    <div className="flex items-center justify-between mb-4">
-      <h2 className="text-xl font-semibold">{title}</h2>
-      <div>{right}</div>
+  <div className="w-full max-w-6xl mx-auto my-4 sm:my-6 p-4 sm:p-5 rounded-2xl shadow border bg-white">
+    <div className="flex items-center justify-between gap-2 mb-3 sm:mb-4">
+      <h2 className="text-lg sm:text-xl font-semibold">{title}</h2>
+      <div className="min-w-0">{right}</div>
     </div>
     {children}
   </div>
@@ -42,6 +42,7 @@ export default function Invoices() {
 
   async function download() {
     const order = orders.find(o => o.id === Number(selectedOrderId));
+    if (!order) return;
     const customer = customers.find(c => c.id === order.customerId);
     await generateInvoicePDF(order, customer);
   }
@@ -49,7 +50,7 @@ export default function Invoices() {
   return (
     <Section title="Invoices — Generate PDF from an order">
       <div className="grid grid-cols-12 gap-4 mb-4">
-        <div className="col-span-4">
+        <div className="col-span-12 sm:col-span-4">
           <Label>Month</Label>
           <div className="border rounded-xl max-h-64 overflow-auto bg-white">
             {months.map(m => (
@@ -60,13 +61,13 @@ export default function Invoices() {
             {months.length === 0 && <div className="p-2 text-gray-500">No months yet.</div>}
           </div>
         </div>
-        <div className="col-span-4">
+        <div className="col-span-12 sm:col-span-4">
           <Label>Day</Label>
           <div className="flex flex-wrap gap-2">
             {days.map(d => <Button key={d} className={selectedDay === d ? "bg-blue-100":""} onClick={()=>setSelectedDay(d)}>{d}</Button>)}
           </div>
         </div>
-        <div className="col-span-4">
+        <div className="col-span-12 sm:col-span-4">
           <Label>Order</Label>
           <Select value={selectedOrderId} onChange={e=>setSelectedOrderId(Number(e.target.value))}>
             {orders.map(o => <option key={o.id} value={o.id}>{o.orderCode} — ฿{Number(o.total || 0).toFixed(2)}</option>)}
