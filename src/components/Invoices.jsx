@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { listOrdersByDate, getOrder } from "../api";
-import { formatTHB, todayStr } from "../utils/format";
+import { formatTHB, todayStr, getBase64FromUrl } from "../utils/format";
 
 /** Utility: safe date (YYYY-MM-DD) */
 function ymd(d) {
@@ -42,123 +42,105 @@ async function generateInvoice(order) {
   const delivery = Number(fullOrder.deliveryFee ?? fullOrder.delivery ?? 0);
   const total = subtotal + delivery;
 
-  // Create doc
-  const doc = new jsPDF("p", "pt"); // pt gives cleaner spacing
+  // Create doc (pt = more exact spacing)
+  const doc = new jsPDF("p", "pt");
 
-  // Try to load logo
-  const logoImg = new Image();
-  logoImg.src = "/logo.png";
+  // Try to load logo as Base64 and keep aspect ratio automatically
+  try {
+    const dataUrl = await getBase64FromUrl("/logo.png");
+    // width = 90, height = 0 (auto) -> preserves aspect ratio
+    doc.addImage(dataUrl, "PNG", 450, 20, 90, 0);
+  } catch {
+    /* ignore if logo missing */
+  }
 
-  const drawDoc = () => {
-    // Header
-    doc.setFontSize(18);
-    doc.text("INVOICE", 40, 40);
+  // Header
+  doc.setFontSize(18);
+  doc.text("INVOICE", 40, 40);
 
-    // Logo (keep aspect ratio)
-    try {
-      const logoWidth = 90;
-      const logoH = logoWidth * (logoImg.height / logoImg.width || 1);
-      doc.addImage(logoImg, "PNG", 450, 20, logoWidth, logoH);
-    } catch {
-      /* ignore if logo can't be loaded */
-    }
+  // Business info
+  doc.setFontSize(11);
+  doc.text("Selera Malaysia Bangkok", 40, 65);
+  doc.text("Phone: +66 9 8284 1569", 40, 82);
 
-    // Business info
-    doc.setFontSize(11);
-    doc.text("Selera Malaysia Bangkok", 40, 65);
-    doc.text("Phone: +66 9 8284 1569", 40, 82);
+  // Bill To
+  const billYTop = 120;
+  doc.setFont(undefined, "bold");
+  doc.text("Bill To:", 40, billYTop);
+  doc.setFont(undefined, "normal");
+  let lineY = billYTop + 16;
+  if (fullOrder.customerName) {
+    doc.text(String(fullOrder.customerName), 40, lineY);
+    lineY += 16;
+  }
+  if (fullOrder.customerPhone) {
+    doc.text(`Phone: ${fullOrder.customerPhone}`, 40, lineY);
+    lineY += 16;
+  }
+  if (fullOrder.customerAddress) {
+    const lines = doc.splitTextToSize(`Address: ${fullOrder.customerAddress}`, 260);
+    doc.text(lines, 40, lineY);
+  }
 
-    // Bill To
-    const billYTop = 120;
-    doc.setFont(undefined, "bold");
-    doc.text("Bill To:", 40, billYTop);
-    doc.setFont(undefined, "normal");
-    let lineY = billYTop + 16;
-    if (fullOrder.customerName) {
-      doc.text(String(fullOrder.customerName), 40, lineY);
-      lineY += 16;
-    }
-    if (fullOrder.customerPhone) {
-      doc.text(`Phone: ${fullOrder.customerPhone}`, 40, lineY);
-      lineY += 16;
-    }
-    if (fullOrder.customerAddress) {
-      // split address if long
-      const lines = doc.splitTextToSize(`Address: ${fullOrder.customerAddress}`, 260);
-      doc.text(lines, 40, lineY);
-    }
+  // Invoice meta (right side)
+  const metaX = 380;
+  doc.setFont(undefined, "normal");
+  doc.text(`Invoice #: ${fullOrder.orderCode || fullOrder.code || fullOrder.id}`, metaX, billYTop);
+  doc.text(`Date: ${ymd(fullOrder.date)}`, metaX, billYTop + 16);
 
-    // Invoice meta (right side)
-    const metaX = 380;
-    doc.setFont(undefined, "normal");
-    doc.text(`Invoice #: ${fullOrder.orderCode || fullOrder.code || fullOrder.id}`, metaX, billYTop);
-    doc.text(`Date: ${ymd(fullOrder.date)}`, metaX, billYTop + 16);
+  // Items table
+  const headers = [["Description", "Qty", "Unit Price", "Amount"]];
+  const body = items.map((it) => [
+    it.name,
+    String(it.qty),
+    `THB ${it.price.toFixed(2)}`,
+    `THB ${(it.qty * it.price).toFixed(2)}`,
+  ]);
 
-    // Items table
-    const headers = [["Description", "Qty", "Unit Price", "Amount"]];
-    const body = items.map((it) => [
-      it.name,
-      String(it.qty),
-      `THB ${it.price.toFixed(2)}`,
-      `THB ${(it.qty * it.price).toFixed(2)}`,
-    ]);
+  autoTable(doc, {
+    startY: 200,
+    head: headers,
+    body,
+    theme: "grid",
+    styles: {
+      fontSize: 10,
+      lineWidth: 0.5,
+      lineColor: [0, 0, 0],
+      cellPadding: 6,
+    },
+    headStyles: {
+      fillColor: [0, 51, 153],
+      halign: "left",
+      fontStyle: "bold",
+      textColor: [255, 255, 255],
+    },
+    columnStyles: {
+      1: { halign: "right" },
+      2: { halign: "right" },
+      3: { halign: "right" },
+    },
+  });
 
-    autoTable(doc, {
-      startY: 200,
-      head: headers,
-      body,
-      theme: "grid",
-      styles: {
-        fontSize: 10,
-        lineWidth: 0.5,
-        lineColor: [0, 0, 0],
-        cellPadding: 6,
-      },
-      headStyles: {
-        fillColor: [0, 51, 153],
-        halign: "left",
-        fontStyle: "bold",
-        textColor: [255, 255, 255],
-      },
-      columnStyles: {
-        1: { halign: "right" },
-        2: { halign: "right" },
-        3: { halign: "right" },
-      },
-    });
+  // Totals box
+  const y = doc.lastAutoTable?.finalY ? doc.lastAutoTable.finalY + 20 : 260;
+  doc.setFontSize(11);
+  doc.text(`Subtotal: ${formatTHB(subtotal)}`, 40, y);
+  doc.text(`Delivery Fee: ${formatTHB(delivery)}`, 40, y + 16);
+  doc.setFont(undefined, "bold");
+  doc.text(`TOTAL: ${formatTHB(total)}`, 40, y + 36);
+  doc.setFont(undefined, "normal");
 
-    // Totals box
-    const y = doc.lastAutoTable?.finalY ? doc.lastAutoTable.finalY + 20 : 260;
-    doc.setFontSize(11);
-    doc.text(`Subtotal: ${formatTHB(subtotal)}`, 40, y);
-    doc.text(`Delivery Fee: ${formatTHB(delivery)}`, 40, y + 16);
-    doc.setFont(undefined, "bold");
-    doc.text(`TOTAL: ${formatTHB(total)}`, 40, y + 36);
-    doc.setFont(undefined, "normal");
+  // Payment footer
+  const fy = y + 70;
+  doc.setFontSize(10);
+  doc.setFont(undefined, "bold");
+  doc.text("Payment:", 40, fy);
+  doc.setFont(undefined, "normal");
+  doc.text("Krungsri / Bank Ayudhaya : 511 1345 714", 40, fy + 16);
+  doc.text("PromptPay: 098 284 1569", 40, fy + 32);
+  doc.text("Thank you for your order!", 40, fy + 56);
 
-    // Payment footer
-    const fy = y + 70;
-    doc.setFontSize(10);
-    doc.setFont(undefined, "bold");
-    doc.text("Payment:", 40, fy);
-    doc.setFont(undefined, "normal");
-    doc.text("Krungsri / Bank Ayudhaya : 511 1345 714", 40, fy + 16);
-    doc.text("PromptPay: 098 284 1569", 40, fy + 32);
-    doc.text("Thank you for your order!", 40, fy + 56);
-
-    doc.save(`${fullOrder.orderCode || fullOrder.code || "invoice"}.pdf`);
-  };
-
-  // If the logo loads, onload fires; otherwise draw immediately after small delay
-  logoImg.onload = drawDoc;
-  setTimeout(() => {
-    // draw even if onload didn't fire (e.g. missing logo)
-    try {
-      if (!logoImg.complete) drawDoc();
-    } catch {
-      drawDoc();
-    }
-  }, 300);
+  doc.save(`${fullOrder.orderCode || fullOrder.code || "invoice"}.pdf`);
 }
 
 export default function Invoices() {
@@ -232,8 +214,12 @@ export default function Invoices() {
                     </div>
                   </td>
                   <td className="p-2 hidden sm:table-cell">{formatTHB(o.subtotal)}</td>
-                  <td className="p-2 hidden sm:table-cell">{formatTHB(o.deliveryFee ?? o.delivery)}</td>
-                  <td className="p-2">{formatTHB((o.subtotal ?? 0) + (o.deliveryFee ?? o.delivery ?? 0))}</td>
+                  <td className="p-2 hidden sm:table-cell">
+                    {formatTHB(o.deliveryFee ?? o.delivery)}
+                  </td>
+                  <td className="p-2">
+                    {formatTHB((o.subtotal ?? 0) + (o.deliveryFee ?? o.delivery ?? 0))}
+                  </td>
                   <td className="p-2">
                     <button
                       onClick={() => generateInvoice(o)}
@@ -255,7 +241,7 @@ export default function Invoices() {
           </table>
         </div>
 
-        {/* Optional: show lightweight item preview per order */}
+        {/* Optional: lightweight item preview per order if items are included */}
         <div className="mt-6 space-y-3">
           {orders.map(
             (o) =>
