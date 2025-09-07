@@ -4,7 +4,6 @@ import { todayStr, formatTHB } from "./utils/format";
 import Products from "./components/Products";
 import Customers from "./components/Customers";
 import Orders from "./components/Orders";
-import Invoices from "./components/Invoices";
 import Settings from "./components/Settings";
 
 /* ---------- Shared UI bits ---------- */
@@ -104,7 +103,6 @@ function Dashboard() {
             <b>auto-consolidated</b>.
           </li>
           <li>Manage <b>Products</b> and <b>Customers</b>.</li>
-          <li>Invoices tab lets you generate a PDF invoice for any order.</li>
           <li>Data is stored in <b>Neon Postgres</b> (via Netlify Functions).</li>
           <li>Use <b>Settings</b> to import CSV for Products and Customers.</li>
         </ul>
@@ -119,7 +117,7 @@ const Tabs = {
   ORDERS: "Orders",
   PRODUCTS: "Products",
   CUSTOMERS: "Customers",
-  INVOICES: "Invoices",
+
   SETTINGS: "Settings",
 };
 
@@ -165,8 +163,7 @@ export default function App() {
         {tab === Tabs.ORDERS && <Orders />}
         {tab === Tabs.PRODUCTS && <Products />}
         {tab === Tabs.CUSTOMERS && <Customers />}
-        {tab === Tabs.INVOICES && <Invoices />}
-        {tab === Tabs.SETTINGS && <Settings />}
+{tab === Tabs.SETTINGS && <Settings />}
       </main>
 
       {/* Small helpers */}
