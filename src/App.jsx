@@ -5,6 +5,7 @@ import Products from "./components/Products";
 import Customers from "./components/Customers";
 import Orders from "./components/Orders";
 import Settings from "./components/Settings";
+import Insights from "./components/Insights";
 
 /* ---------- Shared UI bits ---------- */
 const Section = ({ title, right, children }) => (
@@ -105,6 +106,7 @@ function Dashboard() {
           <li>Manage <b>Products</b> and <b>Customers</b>.</li>
           <li>Data is stored in <b>Neon Postgres</b> (via Netlify Functions).</li>
           <li>Use <b>Settings</b> to import CSV for Products and Customers.</li>
+          <li>Check <b>Insights</b> for top products, monthly totals, and top customers.</li>
         </ul>
       </Section>
     </div>
@@ -117,8 +119,8 @@ const Tabs = {
   ORDERS: "Orders",
   PRODUCTS: "Products",
   CUSTOMERS: "Customers",
-
   SETTINGS: "Settings",
+  INSIGHTS: "Insights",
 };
 
 /* ---------- App ---------- */
@@ -163,7 +165,8 @@ export default function App() {
         {tab === Tabs.ORDERS && <Orders />}
         {tab === Tabs.PRODUCTS && <Products />}
         {tab === Tabs.CUSTOMERS && <Customers />}
-{tab === Tabs.SETTINGS && <Settings />}
+        {tab === Tabs.SETTINGS && <Settings />}
+        {tab === Tabs.INSIGHTS && <Insights />}
       </main>
 
       {/* Small helpers */}
