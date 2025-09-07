@@ -20,20 +20,24 @@ const Button = ({ children, className = "", ...props }) => (
   </button>
 );
 
-/* ---------- Sample CSVs ---------- */
+/* ---------- Sample CSVs (download buttons) ---------- */
 const SAMPLE_PRODUCTS = `name,price
 Apam Balik 1 pc,25
 Bubur Kacang Hijau Durian 1 bowl,89
 `;
+
 const SAMPLE_CUSTOMERS = `name,phone,address
 John Doe,0812345678,23/11 Sukhumvit 15, Bangkok
 Amy Tan,0899990000,Thonglor Soi 10, Bangkok
 `;
-/* Required columns for orders are up to your server importer; this template fits /import-orders */
-const SAMPLE_ORDERS = `date,customer,product,qty,price,delivery_fee,notes
-2025-09-01,John Doe,Apam Balik 1 pc,5,25,30,No peanuts please
-2025-09-01,John Doe,Bubur Kacang Hijau Durian 1 bowl,2,89,30,No peanuts please
-2025-09-02,Amy Tan,Apam Balik 1 pc,3,25,0,Leave at lobby
+
+/* Orders importer expects these headers (case-insensitive):
+   REQUIRED: date, customerName, productName, qty, price
+   OPTIONAL: customerPhone, customerAddress, deliveryFee, notes */
+const SAMPLE_ORDERS = `date,customerName,customerPhone,customerAddress,productName,qty,price,deliveryFee,notes
+2025-09-01,John Doe,0812345678,23/11 Sukhumvit 15, Apam Balik 1 pc,5,25,30,No peanuts please
+2025-09-01,John Doe,0812345678,23/11 Sukhumvit 15, Bubur Kacang Hijau Durian 1 bowl,2,89,30,No peanuts please
+2025-09-02,Amy Tan,0899990000,Thonglor Soi 10, Apam Balik 1 pc,3,25,,Leave at lobby
 `;
 
 function download(name, content) {
@@ -49,10 +53,10 @@ function download(name, content) {
   }, 0);
 }
 
-/* ---------- Robust CSV parsing (handles quotes, commas, newlines) ---------- */
+/* ---------- Robust CSV parsing (quotes, commas, newlines) ---------- */
 function parseCSV(text) {
-  const rows = [];
-  let cur = [];
+  const out = [];
+  let row = [];
   let val = "";
   let inQ = false;
 
@@ -60,24 +64,24 @@ function parseCSV(text) {
     const c = text[i], n = text[i + 1];
 
     if (inQ) {
-      if (c === `"` && n === `"`) { val += `"`; i++; continue; }
-      if (c === `"`) { inQ = false; continue; }
+      if (c === '"' && n === '"') { val += '"'; i++; continue; }
+      if (c === '"') { inQ = false; continue; }
       val += c;
       continue;
     }
-    if (c === `"`) { inQ = true; continue; }
-    if (c === ",") { cur.push(val); val = ""; continue; }
+    if (c === '"') { inQ = true; continue; }
+    if (c === ",") { row.push(val); val = ""; continue; }
     if (c === "\n" || c === "\r") {
       if (c === "\r" && n === "\n") i++;
-      cur.push(val); rows.push(cur); cur = []; val = "";
+      row.push(val); out.push(row); row = []; val = "";
       continue;
     }
     val += c;
   }
-  if (val.length || cur.length) { cur.push(val); rows.push(cur); }
+  if (val.length || row.length) { row.push(val); out.push(row); }
 
   // Trim whitespace
-  return rows.map(r => r.map(x => (x ?? "").toString().trim()));
+  return out.map(r => r.map(x => (x ?? "").toString().trim()));
 }
 
 export default function Settings() {
@@ -92,40 +96,85 @@ export default function Settings() {
     try {
       const text = await file.text();
 
+      /* ----- ORDERS: send array payload to server importer ----- */
       if (type === "orders") {
-        // Server-side importer returns { created, merged, itemsInserted, ordersProcessed }
-        const res = await fetch("/.netlify/functions/import-orders", {
+        const rows = parseCSV(text);
+        if (!rows.length) throw new Error("Empty CSV");
+
+        const headers = rows.shift().map(h => String(h || "").toLowerCase());
+        const idx = (name) => headers.indexOf(name);
+
+        const iDate   = idx("date");
+        const iCName  = idx("customername");
+        const iPName  = idx("productname");
+        const iQty    = idx("qty");
+        const iPrice  = idx("price");
+
+        const missing = [];
+        if (iDate  === -1) missing.push("date");
+        if (iCName === -1) missing.push("customerName");
+        if (iPName === -1) missing.push("productName");
+        if (iQty   === -1) missing.push("qty");
+        if (iPrice === -1) missing.push("price");
+        if (missing.length) throw new Error(`Missing required headers: ${missing.join(", ")}`);
+
+        const iCPhone = idx("customerphone");
+        const iCAddr  = idx("customeraddress");
+        const iFee    = idx("deliveryfee");
+        const iNotes  = idx("notes");
+
+        const payload = rows.map((r) => ({
+          date: (r[iDate] || "").slice(0, 10),
+          customerName: (r[iCName] || "").trim(),
+          customerPhone: iCPhone >= 0 ? (r[iCPhone] || "") : "",
+          customerAddress: iCAddr >= 0 ? (r[iCAddr] || "") : "",
+          productName: (r[iPName] || "").trim(),
+          qty: Number(r[iQty] || 0),
+          price: Number(r[iPrice] || 0),
+          deliveryFee: iFee >= 0
+            ? (r[iFee] === "" || r[iFee] == null ? null : Number(r[iFee]))
+            : null,
+          notes: iNotes >= 0 ? (r[iNotes] || "") : "",
+        }));
+
+        const resp = await fetch("/.netlify/functions/import-orders", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ csv: text }),
+          body: JSON.stringify(payload),
         });
-        if (!res.ok) {
-          const body = await res.text().catch(() => "");
+
+        if (!resp.ok) {
+          const body = await resp.text().catch(() => "");
           throw new Error(body || "Import failed");
         }
-        const data = await res.json();
+
+        const data = await resp.json().catch(() => ({}));
         setLog((p) => p +
-          `Orders import complete ⇒ orders processed: ${data.ordersProcessed ?? 0}, created: ${data.created ?? 0}, merged: ${data.merged ?? 0}, items inserted: ${data.itemsInserted ?? 0}\n`
+          `Orders import complete ⇒ orders processed: ${data.ordersProcessed ?? 0}, ` +
+          `created: ${data.created ?? 0}, merged: ${data.merged ?? 0}, ` +
+          `items inserted: ${data.itemsInserted ?? 0}\n`
         );
+
+        // Refresh UI immediately
         window.dispatchEvent(new Event("smb-data-changed"));
         location.reload();
         return;
       }
 
-      // Client-side imports for products/customers
-      const rows = parseCSV(text);
-      if (!rows.length) throw new Error("Empty CSV");
-
-      const headers = rows.shift().map((h) => h.toLowerCase());
-      const idx = (name) => headers.indexOf(name);
-
-      let created = 0, skipped = 0, failed = 0;
-
+      /* ----- PRODUCTS: client-side row-by-row ----- */
       if (type === "products") {
+        const rows = parseCSV(text);
+        if (!rows.length) throw new Error("Empty CSV");
+
+        const headers = rows.shift().map(h => String(h || "").toLowerCase());
+        const idx = (name) => headers.indexOf(name);
+
         const iName = idx("name");
         const iPrice = idx("price");
         if (iName === -1) throw new Error(`"name" header not found`);
         if (iPrice === -1) throw new Error(`"price" header not found`);
+
+        let created = 0, skipped = 0, failed = 0;
 
         for (const r of rows) {
           try {
@@ -139,31 +188,51 @@ export default function Settings() {
             setLog((p) => p + `Product row failed: ${e.message}\n`);
           }
         }
+
         setLog((p) => p + `Products import complete ⇒ created: ${created}, skipped: ${skipped}, failed: ${failed}\n`);
         window.dispatchEvent(new Event("smb-data-changed"));
         location.reload();
         return;
       }
 
+      /* ----- CUSTOMERS: client-side row-by-row ----- */
       if (type === "customers") {
+        const rows = parseCSV(text);
+        if (!rows.length) throw new Error("Empty CSV");
+
+        const headers = rows.shift().map(h => String(h || "").toLowerCase());
+        const idx = (name) => headers.indexOf(name);
+
         const iName = idx("name");
         if (iName === -1) throw new Error(`"name" header not found`);
+
         const iPhone = idx("phone");
         const iAddress = idx("address");
+        const iGrabwin = idx("grabwin");
+        const iGrabcar = idx("grabcar");
+        const iNationality = idx("nationality");
+
+        let created = 0, skipped = 0, failed = 0;
 
         for (const r of rows) {
           try {
-            const name = r[iName] || "";
-            if (!name) { skipped++; continue; }
-            const phone = iPhone === -1 ? "" : (r[iPhone] || "");
-            const address = iAddress === -1 ? "" : (r[iAddress] || "");
-            await createCustomer({ name, phone, address });
+            const draft = {
+              name: r[iName] || "",
+              phone: iPhone >= 0 ? r[iPhone] || "" : "",
+              address: iAddress >= 0 ? r[iAddress] || "" : "",
+              grabwin: iGrabwin >= 0 ? r[iGrabwin] || "" : "",
+              grabcar: iGrabcar >= 0 ? r[iGrabcar] || "" : "",
+              nationality: iNationality >= 0 ? r[iNationality] || "" : "",
+            };
+            if (!draft.name) { skipped++; continue; }
+            await createCustomer(draft);
             created++;
           } catch (e) {
             failed++;
             setLog((p) => p + `Customer row failed: ${e.message}\n`);
           }
         }
+
         setLog((p) => p + `Customers import complete ⇒ created: ${created}, skipped: ${skipped}, failed: ${failed}\n`);
         window.dispatchEvent(new Event("smb-data-changed"));
         location.reload();
@@ -184,11 +253,7 @@ export default function Settings() {
       {/* PRODUCTS */}
       <Section
         title="Import Products (CSV)"
-        right={
-          <Button onClick={() => download("products_sample.csv", SAMPLE_PRODUCTS)}>
-            Download sample CSV
-          </Button>
-        }
+        right={<Button onClick={() => download("products_sample.csv", SAMPLE_PRODUCTS)}>Download sample CSV</Button>}
       >
         <p className="mb-2 text-sm text-gray-600">
           CSV headers required: <b>name,price</b>. If a value contains commas, wrap it in double-quotes.
@@ -204,14 +269,11 @@ export default function Settings() {
       {/* CUSTOMERS */}
       <Section
         title="Import Customers (CSV)"
-        right={
-          <Button onClick={() => download("customers_sample.csv", SAMPLE_CUSTOMERS)}>
-            Download sample CSV
-          </Button>
-        }
+        right={<Button onClick={() => download("customers_sample.csv", SAMPLE_CUSTOMERS)}>Download sample CSV</Button>}
       >
         <p className="mb-2 text-sm text-gray-600">
-          CSV must include at least <b>name</b>. Optional columns like <b>phone</b> and <b>address</b> will be used if present.
+          CSV must include at least <b>name</b>. Optional columns like <b>phone</b>, <b>address</b>, <b>grabwin</b>,
+          <b className="ml-1">grabcar</b>, and <b className="ml-1">nationality</b> will be used if present.
         </p>
         <input
           type="file"
@@ -224,15 +286,11 @@ export default function Settings() {
       {/* ORDERS */}
       <Section
         title="Import Orders (CSV)"
-        right={
-          <Button onClick={() => download("orders_sample.csv", SAMPLE_ORDERS)}>
-            Download sample CSV
-          </Button>
-        }
+        right={<Button onClick={() => download("orders_sample.csv", SAMPLE_ORDERS)}>Download sample CSV</Button>}
       >
         <p className="mb-2 text-sm text-gray-600">
-          Upload the orders CSV exported from Excel. The server will group by <b>date + customer</b>, upsert customers/products,
-          create/merge orders, and recalculate totals automatically.
+          Required headers: <b>date, customerName, productName, qty, price</b>. Optional: <b>customerPhone</b>,{" "}
+          <b>customerAddress</b>, <b>deliveryFee</b>, <b>notes</b>.
         </p>
         <input
           type="file"
