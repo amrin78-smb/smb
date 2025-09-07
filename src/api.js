@@ -21,6 +21,10 @@ export const createProduct  = (p) => j("POST", "/products", p);
 export const updateProduct  = (p) => j("PUT",  "/products", p);
 export const deleteProduct  = (id) => j("DELETE", `/products?id=${id}`);
 
+// ---------- Insights (aggregates) ----------
+export const getInsightsSummary = (params) => j("POST", "/insights", { action: "summary", ...params });
+export const getCustomerInsights = (customerId, params) => j("POST", "/insights", { action: "customer", customerId, ...params });
+
 /* Customers */
 export const listCustomers  = () => j("GET",  "/customers");
 export const createCustomer = (c) => j("POST", "/customers", c);
