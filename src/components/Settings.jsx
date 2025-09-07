@@ -53,7 +53,7 @@ function download(name, content) {
   }, 0);
 }
 
-/* ---------- Robust CSV parsing (quotes, commas, newlines) ---------- */
+/* ---------- CSV parsing ---------- */
 function parseCSV(text) {
   const out = [];
   let row = [];
@@ -82,6 +82,46 @@ function parseCSV(text) {
 
   // Trim whitespace
   return out.map(r => r.map(x => (x ?? "").toString().trim()));
+}
+
+/* ---------- Date normalization to YYYY-MM-DD ---------- */
+function normalizeDate(input) {
+  if (input == null) return "";
+  const s = String(input).trim();
+  if (!s) return "";
+
+  // Excel serial (days since 1899-12-30)
+  if (/^\d{5,}$/.test(s)) {
+    const n = Number(s);
+    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+    const date = new Date(excelEpoch.getTime() + n * 86400000);
+    return isNaN(date) ? "" : date.toISOString().slice(0, 10);
+  }
+
+  // ISO-ish YYYY-MM-DD or YYYY/MM/DD
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test(s)) {
+    const [y, m, d] = s.split(/[-/]/).map(Number);
+    const date = new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+    return isNaN(date) ? "" : date.toISOString().slice(0, 10);
+  }
+
+  // DD-MM-YY, DD/MM/YY, DD-MM-YYYY, DD/MM/YYYY (Thai/Intl style)
+  const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  if (m) {
+    let day = Number(m[1]), mon = Number(m[2]), year = Number(m[3]);
+    if (year < 100) year += (year >= 70 ? 1900 : 2000); // 70–99 -> 19xx, 00–69 -> 20xx
+    const date = new Date(Date.UTC(year, (mon || 1) - 1, day || 1));
+    return isNaN(date) ? "" : date.toISOString().slice(0, 10);
+  }
+
+  // Fallback: Date.parse
+  const d2 = new Date(s);
+  if (!isNaN(d2)) {
+    const z = new Date(Date.UTC(d2.getFullYear(), d2.getMonth(), d2.getDate()));
+    return z.toISOString().slice(0, 10);
+  }
+
+  return "";
 }
 
 export default function Settings() {
@@ -123,19 +163,33 @@ export default function Settings() {
         const iFee    = idx("deliveryfee");
         const iNotes  = idx("notes");
 
-        const payload = rows.map((r) => ({
-          date: (r[iDate] || "").slice(0, 10),
-          customerName: (r[iCName] || "").trim(),
-          customerPhone: iCPhone >= 0 ? (r[iCPhone] || "") : "",
-          customerAddress: iCAddr >= 0 ? (r[iCAddr] || "") : "",
-          productName: (r[iPName] || "").trim(),
-          qty: Number(r[iQty] || 0),
-          price: Number(r[iPrice] || 0),
-          deliveryFee: iFee >= 0
-            ? (r[iFee] === "" || r[iFee] == null ? null : Number(r[iFee]))
-            : null,
-          notes: iNotes >= 0 ? (r[iNotes] || "") : "",
-        }));
+        let badDate = 0;
+
+        const payload = rows.map((r) => {
+          const nd = normalizeDate(r[iDate]);
+          if (!nd) { badDate++; }
+          return {
+            date: nd,
+            customerName: (r[iCName] || "").trim(),
+            customerPhone: iCPhone >= 0 ? (r[iCPhone] || "") : "",
+            customerAddress: iCAddr >= 0 ? (r[iCAddr] || "") : "",
+            productName: (r[iPName] || "").trim(),
+            qty: Number(r[iQty] || 0),
+            price: Number(r[iPrice] || 0),
+            deliveryFee: iFee >= 0
+              ? (r[iFee] === "" || r[iFee] == null ? null : Number(r[iFee]))
+              : null,
+            notes: iNotes >= 0 ? (r[iNotes] || "") : "",
+          };
+        }).filter(row => row.date); // drop rows with unparsable date
+
+        if (badDate > 0) {
+          setLog((p) => p + `Skipped ${badDate} rows due to invalid dates. Expecting formats like YYYY-MM-DD, DD-MM-YY, DD/MM/YYYY, or Excel serial.\n`);
+        }
+
+        if (payload.length === 0) {
+          throw new Error("All rows had invalid or missing dates.");
+        }
 
         const resp = await fetch("/.netlify/functions/import-orders", {
           method: "POST",
