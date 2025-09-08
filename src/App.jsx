@@ -6,6 +6,8 @@ import Customers from "./components/Customers";
 import Orders from "./components/Orders";
 import Settings from "./components/Settings";
 import Insights from "./components/Insights";
+import { todayStr, formatTHB, formatDateDMY } from "./utils/format";
+
 
 /* ---------- Shared UI bits ---------- */
 const Section = ({ title, right, children }) => (
@@ -60,7 +62,7 @@ function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
         <StatCard label="Orders Today" value={totals.orders} />
         <StatCard label="Revenue Today" value={formatTHB(totals.revenue)} />
-        <StatCard label="Date" value={todayStr()} />
+        <StatCard label="Date" value={formatDateDMY(todayStr())} />
       </div>
 
       <Section title="Today’s Orders">
