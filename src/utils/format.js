@@ -25,3 +25,22 @@ export async function getBase64FromUrl(url) {
   });
 }
 
+// utils/format.js
+export function formatDateDMY(value) {
+  if (!value) return "";
+  const s = String(value).trim();
+
+  // If value looks like "YYYY-MM-DD" or "YYYY-MM-DDTHH:mm:ss..."
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+
+  // Fallback: try Date parsing (covers Date objects / other formats)
+  const d = value instanceof Date ? value : new Date(s);
+  if (isNaN(d)) return s; // leave as-is if unparsable
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+}
+
+
