@@ -87,6 +87,24 @@ export default function Orders() {
   const dayDelivery = useMemo(() => dayOrders.reduce((s,o)=>s+Number(o.deliveryFee||0),0), [dayOrders]);
   const dayGrand = useMemo(() => dayOrders.reduce((s,o)=>s+Number(o.total||0),0), [dayOrders]);
 
+  // NEW: aggregate items for the selected day (qty + total amount per product)
+  const dayItemTotals = useMemo(() => {
+    const map = new Map();
+    for (const o of dayOrders) {
+      for (const it of (o.items || [])) {
+        const key = it.productId ?? it.productName; // fall back to name if no id
+        const name = it.productName || productMap[it.productId]?.name || "Unknown item";
+        const qty = Number(it.qty || 0);
+        const amount = qty * Number(it.price || 0);
+        const prev = map.get(key) || { name, qty: 0, amount: 0 };
+        prev.qty += qty;
+        prev.amount += amount;
+        map.set(key, prev);
+      }
+    }
+    return Array.from(map.values()).sort((a,b) => b.qty - a.qty);
+  }, [dayOrders, productMap]);
+
   function addItemFromProduct(p) {
     setItems(prev => {
       const idx = prev.findIndex(x => x.productId === p.id);
@@ -272,8 +290,16 @@ export default function Orders() {
       </Section>
 
       {/* Browse Orders */}
-      <Section title="Browse Orders by Month → Day"
-        right={selectedDay ? <div className="text-xs sm:text-sm">For {formatDateDMY(selectedDay)}: Subtotal <b>{formatTHB(daySubtotal)}</b> • Delivery <b>{formatTHB(dayDelivery)}</b> • Total <b>{formatTHB(dayGrand)}</b></div> : null}>
+      <Section
+        title="Browse Orders by Month → Day"
+        right={
+          selectedDay ? (
+            <div className="text-xs sm:text-sm">
+              For {formatDateDMY(selectedDay)}: Subtotal <b>{formatTHB(daySubtotal)}</b> • Delivery <b>{formatTHB(dayDelivery)}</b> • Total <b>{formatTHB(dayGrand)}</b>
+            </div>
+          ) : null
+        }
+      >
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-12 md:col-span-4">
             <Label>Month</Label>
@@ -286,6 +312,7 @@ export default function Orders() {
               {months.length === 0 && <div className="p-2 text-gray-500">No months yet.</div>}
             </div>
           </div>
+
           <div className="col-span-12 md:col-span-8">
             <Label>Day</Label>
             <div className="flex flex-wrap gap-2 mb-3">
@@ -294,6 +321,40 @@ export default function Orders() {
               ))}
               {days.length === 0 && <div className="text-gray-500">Select a month.</div>}
             </div>
+
+            {/* NEW: Items summary for the selected day */}
+            {selectedDay && (
+              <div className="mb-4 p-3 rounded-xl border bg-white">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-medium">Items for {formatDateDMY(selectedDay)}</h4>
+                  <div className="text-xs text-gray-500">{dayItemTotals.length} products</div>
+                </div>
+                {dayItemTotals.length === 0 ? (
+                  <div className="text-sm text-gray-500">No items on this day.</div>
+                ) : (
+                  <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="text-left border-b">
+                          <th className="py-2 pr-4">Item</th>
+                          <th className="py-2 pr-4">Qty</th>
+                          <th className="py-2 pr-4 hidden sm:table-cell">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dayItemTotals.map((it, i) => (
+                          <tr key={i} className="border-b last:border-0">
+                            <td className="py-2 pr-4">{it.name}</td>
+                            <td className="py-2 pr-4 font-semibold">{it.qty}</td>
+                            <td className="py-2 pr-4 hidden sm:table-cell">{formatTHB(it.amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Desktop table */}
             <div className="hidden sm:block overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
