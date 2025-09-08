@@ -4,9 +4,8 @@ import {
   listMonths, listDaysInMonth, listOrdersByDate,
   createOrMergeOrder, updateOrderAndItems, deleteOrder as apiDeleteOrder
 } from "../api";
-import { todayStr, formatTHB, useFuzzy } from "../utils/format";
+import { todayStr, formatTHB, useFuzzy, formatDateDMY, formatMonthMY } from "../utils/format";
 import { generateInvoicePDF } from "../utils/invoice";
-import { formatDateDMY } from "../utils/format";
 
 const Section = ({ title, right, children }) => (
   <div className="w-full max-w-6xl mx-auto my-4 sm:my-6 p-4 sm:p-5 rounded-2xl shadow border bg-white">
@@ -274,14 +273,14 @@ export default function Orders() {
 
       {/* Browse Orders */}
       <Section title="Browse Orders by Month → Day"
-        right={selectedDay ? <div className="text-xs sm:text-sm">For {selectedDay}: Subtotal <b>{formatTHB(daySubtotal)}</b> • Delivery <b>{formatTHB(dayDelivery)}</b> • Total <b>{formatTHB(dayGrand)}</b></div> : null}>
+        right={selectedDay ? <div className="text-xs sm:text-sm">For {formatDateDMY(selectedDay)}: Subtotal <b>{formatTHB(daySubtotal)}</b> • Delivery <b>{formatTHB(dayDelivery)}</b> • Total <b>{formatTHB(dayGrand)}</b></div> : null}>
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-12 md:col-span-4">
             <Label>Month</Label>
             <div className="border rounded-xl max-h-64 overflow-auto bg-white">
               {months.map(m => (
                 <div key={m} className={`p-2 cursor-pointer hover:bg-gray-100 ${selectedMonth === m ? "bg-blue-50" : ""}`} onClick={() => setSelectedMonth(m)}>
-                  {m}
+                  {formatMonthMY(m)}
                 </div>
               ))}
               {months.length === 0 && <div className="p-2 text-gray-500">No months yet.</div>}
@@ -291,7 +290,7 @@ export default function Orders() {
             <Label>Day</Label>
             <div className="flex flex-wrap gap-2 mb-3">
               {days.map(d => (
-                <Button key={d} className={selectedDay === d ? "bg-blue-100" : ""} onClick={() => setSelectedDay(d)}>{d}</Button>
+                <Button key={d} className={selectedDay === d ? "bg-blue-100" : ""} onClick={() => setSelectedDay(d)}>{formatDateDMY(d)}</Button>
               ))}
               {days.length === 0 && <div className="text-gray-500">Select a month.</div>}
             </div>
