@@ -135,12 +135,12 @@ function Dashboard() {
 const Tabs = {
   DASHBOARD: "Dashboard",
   ORDERS: "Orders",
+  DAILY: "Daily Orders",
   PRODUCTS: "Products",
   CUSTOMERS: "Customers",
   SETTINGS: "Settings",
   INSIGHTS: "Insights",
-  DAILY: "Daily",
-};
+  };
 
 /* ---------- App ---------- */
 export default function App() {
