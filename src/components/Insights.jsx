@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { getInsightsSummary, getCustomerInsights, listCustomers } from "../api";
-import { formatTHB } from "../utils/format";
+import { formatTHB, formatDateDMY } from "../utils/format";
+
 
 /* UI helpers */
 const Section = ({ title, right, children }) => (
@@ -306,7 +307,7 @@ export default function Insights() {
                   {(custDetail.orders || []).map((o) => (
                     <tr key={o.id} className="border-b last:border-0">
                       <td className="py-2 pr-4">
-                        {String(o.date).slice(0, 10)}
+                        {formatDateDMY(o.date)}
                       </td>
                       <td className="py-2 pr-4">{o.order_code || "—"}</td>
                       <td className="py-2 pr-4">
