@@ -43,4 +43,12 @@ export function formatDateDMY(value) {
   return `${dd}-${mm}-${yyyy}`;
 }
 
+// Show "MM-YYYY" for strings like "2025-08"
+export function formatMonthMY(value) {
+  if (!value) return "";
+  const m = String(value).match(/^(\d{4})-(\d{2})$/); // YYYY-MM
+  if (m) return `${m[2]}-${m[1]}`;
+  return value;
+}
+
 
