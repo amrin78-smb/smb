@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { listOrdersByDate } from "./api";
+import { todayStr, formatTHB, formatDateDMY } from "./utils/format";
 import Products from "./components/Products";
 import Customers from "./components/Customers";
 import Orders from "./components/Orders";
 import Settings from "./components/Settings";
 import Insights from "./components/Insights";
-import { todayStr, formatTHB, formatDateDMY } from "./utils/format";
-
+import Daily from "./components/Daily";
 
 /* ---------- Shared UI bits ---------- */
 const Section = ({ title, right, children }) => (
@@ -80,9 +80,13 @@ function Dashboard() {
               {orders.map((o) => (
                 <tr key={o.id} className="border-b">
                   <td className="p-2">{o.orderCode}</td>
-                  <td className="p-2 hidden sm:table-cell">{o.customerName ?? o.customerId}</td>
+                  <td className="p-2 hidden sm:table-cell">
+                    {o.customerName ?? o.customerId}
+                  </td>
                   <td className="p-2">{formatTHB(o.subtotal)}</td>
-                  <td className="p-2 hidden sm:table-cell">{formatTHB(o.deliveryFee)}</td>
+                  <td className="p-2 hidden sm:table-cell">
+                    {formatTHB(o.deliveryFee)}
+                  </td>
                   <td className="p-2">{formatTHB(o.total)}</td>
                 </tr>
               ))}
@@ -104,10 +108,23 @@ function Dashboard() {
             Use <b>Orders</b> to create orders. Same customer + same date is{" "}
             <b>auto-consolidated</b>.
           </li>
-          <li>Manage <b>Products</b> and <b>Customers</b>.</li>
-          <li>Data is stored in <b>Neon Postgres</b> (via Netlify Functions).</li>
-          <li>Use <b>Settings</b> to import CSV for Products and Customers.</li>
-          <li>Check <b>Insights</b> for top products, monthly totals, and top customers.</li>
+          <li>
+            Manage <b>Products</b> and <b>Customers</b>.
+          </li>
+          <li>
+            Data is stored in <b>Neon Postgres</b> (via Netlify Functions).
+          </li>
+          <li>
+            Use <b>Settings</b> to import CSV for Products and Customers.
+          </li>
+          <li>
+            Use <b>Insights</b> for monthly totals, top items/customers, and
+            per-customer history.
+          </li>
+          <li>
+            Use <b>Daily</b> for a one-page day view (totals per item and
+            per-customer blocks).
+          </li>
         </ul>
       </Section>
     </div>
@@ -122,6 +139,7 @@ const Tabs = {
   CUSTOMERS: "Customers",
   SETTINGS: "Settings",
   INSIGHTS: "Insights",
+  DAILY: "Daily",
 };
 
 /* ---------- App ---------- */
@@ -145,7 +163,7 @@ export default function App() {
             />
           </div>
 
-          {/* Row: tabs/nav (moved below title/logo) */}
+          {/* Row: tabs/nav */}
           <nav className="mt-2 flex gap-2 overflow-x-auto whitespace-nowrap no-scrollbar">
             {Object.values(Tabs).map((t) => (
               <Button
@@ -168,6 +186,7 @@ export default function App() {
         {tab === Tabs.CUSTOMERS && <Customers />}
         {tab === Tabs.SETTINGS && <Settings />}
         {tab === Tabs.INSIGHTS && <Insights />}
+        {tab === Tabs.DAILY && <Daily />}
       </main>
 
       {/* Small helpers */}
