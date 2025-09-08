@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { listOrdersByDate } from "./api";
-import { todayStr, formatTHB } from "./utils/format";
 import Products from "./components/Products";
 import Customers from "./components/Customers";
 import Orders from "./components/Orders";
