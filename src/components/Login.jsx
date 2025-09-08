@@ -9,8 +9,8 @@ export default function Login({ onLogin }) {
     e.preventDefault();
     // Hardcoded check
     if (
-      (username === "amrin" && password === "1234") ||
-      (username === "edalin" && password === "5678")
+      (username === "emilyedrin" && password === "Amed1920") ||
+      (username === "amedsmb" && password === "Amed1920")
     ) {
       onLogin(username); // notify App
     } else {
