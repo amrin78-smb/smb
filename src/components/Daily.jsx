@@ -90,7 +90,7 @@ export default function Daily() {
 
   return (
     <div className="max-w-6xl mx-auto">
-      {/* Header controls */}
+      {/* Header controls + ONE summary box */}
       <Section
         title="Daily Summary"
         right={
@@ -100,15 +100,11 @@ export default function Daily() {
           </div>
         }
       >
-        {/* Simplified quick stats */}
-        <div className="grid grid-cols-1 gap-4">
-          <div className="p-4 rounded-xl border bg-gray-50">
-            <div className="text-sm text-gray-600">Total</div>
-            <div className="text-xl font-semibold">{formatTHB(dayGrand)}</div>
-            <div className="text-xs text-gray-600">
-              Subtotal {formatTHB(daySubtotal)} • Delivery {formatTHB(dayDelivery)}
-            </div>
-          </div>
+        {/* Single summary (no inner bordered card) */}
+        <div className="text-sm text-gray-600">Total</div>
+        <div className="text-xl font-semibold">{formatTHB(dayGrand)}</div>
+        <div className="text-xs text-gray-600">
+          Subtotal {formatTHB(daySubtotal)} • Delivery {formatTHB(dayDelivery)}
         </div>
       </Section>
 
