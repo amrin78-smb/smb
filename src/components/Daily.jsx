@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { listOrdersByDate, listCustomers } from "../api";
 import { todayStr, formatTHB, formatDateDMY } from "../utils/format";
 
-/* ---------- Small UI helpers (same look & feel) ---------- */
+/* ---------- Small UI helpers ---------- */
 const Section = ({ title, right, children }) => (
   <div className="w-full max-w-6xl mx-auto my-4 sm:my-6 p-4 sm:p-5 rounded-2xl shadow border bg-white">
     <div className="flex items-center justify-between gap-2 mb-3 sm:mb-4">
@@ -19,9 +19,9 @@ const Button = ({ className = "", ...props }) => (
   <button className={`px-3 py-2 rounded-xl border shadow-sm hover:shadow transition text-sm bg-gray-50 ${className}`} {...props} />
 );
 
-/** Group items across all orders by product (for the Items table) */
+/** Group items across all orders by product */
 function groupItemsByProduct(dayOrders) {
-  const map = new Map(); // key: productId or productName
+  const map = new Map();
   for (const o of dayOrders) {
     for (const it of (o.items || [])) {
       const key = String(it.productId ?? it.productName ?? "");
@@ -37,24 +37,22 @@ function groupItemsByProduct(dayOrders) {
   return Array.from(map.values()).sort((a, b) => b.qty - a.qty);
 }
 
-/** Group orders by customerId to render “Customers for the day” blocks */
+/** Group orders by customerId */
 function groupOrdersByCustomer(dayOrders) {
-  const map = new Map(); // key: customerId
+  const map = new Map();
   for (const o of dayOrders) {
     const cid = o.customerId ?? 0;
     const arr = map.get(cid) || [];
     arr.push(o);
     map.set(cid, arr);
   }
-  return map; // Map<customerId, Order[]>
+  return map;
 }
 
 export default function Daily() {
   const [date, setDate] = useState(todayStr());
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
-
-  // NEW: customers list to show Phone/Address in each customer block
   const [customers, setCustomers] = useState([]);
 
   async function load() {
@@ -75,8 +73,8 @@ export default function Daily() {
     }
   }
 
-  useEffect(() => { load(); }, []);          // initial load
-  useEffect(() => { if (date) load(); }, [date]); // reload on date change
+  useEffect(() => { load(); }, []);
+  useEffect(() => { if (date) load(); }, [date]);
 
   const customersMap = useMemo(
     () => Object.fromEntries(customers.map(c => [c.id, c])),
@@ -102,16 +100,8 @@ export default function Daily() {
           </div>
         }
       >
-        {/* Quick stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="p-4 rounded-xl border bg-gray-50">
-            <div className="text-sm text-gray-600">Date</div>
-            <div className="text-xl font-semibold">{formatDateDMY(date)}</div>
-          </div>
-          <div className="p-4 rounded-xl border bg-gray-50">
-            <div className="text-sm text-gray-600">Orders</div>
-            <div className="text-xl font-semibold">{orders.length}</div>
-          </div>
+        {/* Simplified quick stats */}
+        <div className="grid grid-cols-1 gap-4">
           <div className="p-4 rounded-xl border bg-gray-50">
             <div className="text-sm text-gray-600">Total</div>
             <div className="text-xl font-semibold">{formatTHB(dayGrand)}</div>
@@ -152,7 +142,6 @@ export default function Daily() {
       {/* Customers for the day */}
       <Section title="Customers for the day">
         {[...byCustomer.entries()].map(([customerId, list]) => {
-          // Aggregate this customer's items for the day
           const itemsMap = new Map();
           let deliveryTotal = 0;
           for (const o of list) {
@@ -178,14 +167,10 @@ export default function Daily() {
             <div key={customerId || displayName} className="mb-4 sm:mb-6">
               <div className="p-4 rounded-xl border bg-white">
                 <div className="text-base sm:text-lg font-semibold mb-1">{displayName}</div>
-
-                {/* NEW: Address + Phone (no icons, per your preference) */}
                 <div className="text-sm text-gray-700 mb-3">
                   <div><span className="font-medium">Phone:</span> {c?.phone || "—"}</div>
                   <div><span className="font-medium">Address:</span> {c?.address || "—"}</div>
                 </div>
-
-                {/* Items table for this customer */}
                 <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0">
                   <table className="min-w-full text-sm">
                     <thead>
@@ -203,13 +188,11 @@ export default function Daily() {
                           <td className="p-2">{formatTHB(r.amount)}</td>
                         </tr>
                       ))}
-                      {/* Delivery row */}
                       <tr>
                         <td className="p-2">Delivery Fee</td>
                         <td className="p-2">—</td>
                         <td className="p-2">{formatTHB(deliveryTotal)}</td>
                       </tr>
-                      {/* Grand total */}
                       <tr>
                         <td className="p-2 font-semibold">Total:</td>
                         <td className="p-2 font-semibold">{rows.reduce((s,r)=>s+Number(r.qty||0),0)}</td>
