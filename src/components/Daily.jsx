@@ -90,9 +90,9 @@ export default function Daily() {
 
   return (
     <div className="max-w-6xl mx-auto">
-      {/* Header controls + ONE summary box */}
+      {/* ONE combined section for totals + items */}
       <Section
-        title="Daily Summary"
+        title="Daily Orders"
         right={
           <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
             <Input type="date" value={date} onChange={(e)=>setDate(e.target.value)} />
@@ -100,16 +100,16 @@ export default function Daily() {
           </div>
         }
       >
-        {/* Single summary (no inner bordered card) */}
-        <div className="text-sm text-gray-600">Total</div>
-        <div className="text-xl font-semibold">{formatTHB(dayGrand)}</div>
-        <div className="text-xs text-gray-600">
-          Subtotal {formatTHB(daySubtotal)} • Delivery {formatTHB(dayDelivery)}
+        {/* Totals inline (no inner card) */}
+        <div className="mb-3">
+          <div className="text-sm text-gray-600">Total for {formatDateDMY(date)}</div>
+          <div className="text-xl font-semibold">{formatTHB(dayGrand)}</div>
+          <div className="text-xs text-gray-600">
+            Subtotal {formatTHB(daySubtotal)} • Delivery {formatTHB(dayDelivery)}
+          </div>
         </div>
-      </Section>
 
-      {/* Items summary */}
-      <Section title={`Items for ${formatDateDMY(date)}`}>
+        {/* Items table directly below totals */}
         <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
           <table className="min-w-full text-sm">
             <thead>
@@ -135,7 +135,7 @@ export default function Daily() {
         </div>
       </Section>
 
-      {/* Customers for the day */}
+      {/* Customers for the day (separate section by design) */}
       <Section title="Customers for the day">
         {[...byCustomer.entries()].map(([customerId, list]) => {
           const itemsMap = new Map();
