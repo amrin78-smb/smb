@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { listOrdersByDate } from "../api";
+import { listOrdersByDate, listCustomers } from "../api";
 import { todayStr, formatTHB, formatDateDMY } from "../utils/format";
 
-/* Small UI helpers (same look & feel as rest of app) */
+/* ---------- Small UI helpers (same look & feel) ---------- */
 const Section = ({ title, right, children }) => (
   <div className="w-full max-w-6xl mx-auto my-4 sm:my-6 p-4 sm:p-5 rounded-2xl shadow border bg-white">
     <div className="flex items-center justify-between gap-2 mb-3 sm:mb-4">
@@ -19,9 +19,9 @@ const Button = ({ className = "", ...props }) => (
   <button className={`px-3 py-2 rounded-xl border shadow-sm hover:shadow transition text-sm bg-gray-50 ${className}`} {...props} />
 );
 
-/** Group helpers */
+/** Group items across all orders by product (for the Items table) */
 function groupItemsByProduct(dayOrders) {
-  const map = new Map(); // key: productName|productId
+  const map = new Map(); // key: productId or productName
   for (const o of dayOrders) {
     for (const it of (o.items || [])) {
       const key = String(it.productId ?? it.productName ?? "");
@@ -37,25 +37,54 @@ function groupItemsByProduct(dayOrders) {
   return Array.from(map.values()).sort((a, b) => b.qty - a.qty);
 }
 
+/** Group orders by customerId to render “Customers for the day” blocks */
+function groupOrdersByCustomer(dayOrders) {
+  const map = new Map(); // key: customerId
+  for (const o of dayOrders) {
+    const cid = o.customerId ?? 0;
+    const arr = map.get(cid) || [];
+    arr.push(o);
+    map.set(cid, arr);
+  }
+  return map; // Map<customerId, Order[]>
+}
+
 export default function Daily() {
-  const [date, setDate] = useState(todayStr());         // stays ISO for the input & API
+  const [date, setDate] = useState(todayStr());
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // NEW: customers list to show Phone/Address in each customer block
+  const [customers, setCustomers] = useState([]);
 
   async function load() {
     setLoading(true);
     try {
-      const list = await listOrdersByDate(date);
-      setOrders(list || []);
+      const [os, cs] = await Promise.all([
+        listOrdersByDate(date),
+        listCustomers(),
+      ]);
+      setOrders(Array.isArray(os) ? os : []);
+      setCustomers(Array.isArray(cs) ? cs : []);
+    } catch (e) {
+      console.error(e);
+      setOrders([]);
+      setCustomers([]);
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => { load(); }, []);        // initial load
+  useEffect(() => { load(); }, []);          // initial load
   useEffect(() => { if (date) load(); }, [date]); // reload on date change
 
+  const customersMap = useMemo(
+    () => Object.fromEntries(customers.map(c => [c.id, c])),
+    [customers]
+  );
+
   const dayItemTotals = useMemo(() => groupItemsByProduct(orders), [orders]);
+  const byCustomer    = useMemo(() => groupOrdersByCustomer(orders), [orders]);
 
   const daySubtotal = useMemo(() => orders.reduce((s,o)=>s+Number(o.subtotal||0),0), [orders]);
   const dayDelivery = useMemo(() => orders.reduce((s,o)=>s+Number(o.deliveryFee||0),0), [orders]);
@@ -86,92 +115,114 @@ export default function Daily() {
           <div className="p-4 rounded-xl border bg-gray-50">
             <div className="text-sm text-gray-600">Total</div>
             <div className="text-xl font-semibold">{formatTHB(dayGrand)}</div>
-            <div className="text-xs text-gray-500 mt-1">
+            <div className="text-xs text-gray-600">
               Subtotal {formatTHB(daySubtotal)} • Delivery {formatTHB(dayDelivery)}
             </div>
           </div>
         </div>
       </Section>
 
-      {/* Items total (like the right table in your Excel) */}
+      {/* Items summary */}
       <Section title={`Items for ${formatDateDMY(date)}`}>
-        {dayItemTotals.length === 0 ? (
-          <div className="text-sm text-gray-500">No items on this day.</div>
-        ) : (
-          <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left border-b">
-                  <th className="py-2 pr-4">Food Item</th>
-                  <th className="py-2 pr-4">Total Quantity</th>
-                  <th className="py-2 pr-4 hidden sm:table-cell">Total Amount</th>
+        <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="text-left border-b">
+                <th className="p-2">Food Item</th>
+                <th className="p-2">Total Quantity</th>
+                <th className="p-2">Total Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dayItemTotals.map((row, i) => (
+                <tr key={i} className="border-b">
+                  <td className="p-2">{row.name}</td>
+                  <td className="p-2">{row.qty}</td>
+                  <td className="p-2">{formatTHB(row.amount)}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {dayItemTotals.map((it, i) => (
-                  <tr key={i} className="border-b last:border-0">
-                    <td className="py-2 pr-4">{it.name}</td>
-                    <td className="py-2 pr-4 font-semibold">{it.qty}</td>
-                    <td className="py-2 pr-4 hidden sm:table-cell">{formatTHB(it.amount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+              ))}
+              {dayItemTotals.length === 0 && (
+                <tr><td colSpan={3} className="p-2 text-gray-500">No items.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </Section>
 
-      {/* Per-customer blocks (like the left side of your Excel) */}
+      {/* Customers for the day */}
       <Section title="Customers for the day">
-        {orders.length === 0 ? (
-          <div className="text-sm text-gray-500">No orders on this day.</div>
-        ) : (
-          <div className="space-y-4">
-            {orders.map((o) => (
-              <div key={o.id} className="rounded-xl border bg-white overflow-hidden">
-                <div className="px-4 py-2 border-b bg-gray-50">
-                  <div className="font-semibold">{o.customerName ?? o.customerId}</div>
+        {[...byCustomer.entries()].map(([customerId, list]) => {
+          // Aggregate this customer's items for the day
+          const itemsMap = new Map();
+          let deliveryTotal = 0;
+          for (const o of list) {
+            deliveryTotal += Number(o.deliveryFee || 0);
+            for (const it of (o.items || [])) {
+              const key = String(it.productId ?? it.productName ?? "");
+              const prev = itemsMap.get(key) || { name: it.productName || "Unknown", qty: 0, amount: 0 };
+              const qty = Number(it.qty || 0);
+              const amt = qty * Number(it.price || 0);
+              prev.qty += qty;
+              prev.amount += amt;
+              itemsMap.set(key, prev);
+            }
+          }
+          const rows = Array.from(itemsMap.values());
+          const lineTotal = rows.reduce((s,r)=>s+Number(r.amount||0),0);
+          const grand = lineTotal + deliveryTotal;
+
+          const c = customersMap[customerId] || {};
+          const displayName = c?.name ?? (list[0]?.customerName ?? `Customer ${customerId || ""}`);
+
+          return (
+            <div key={customerId || displayName} className="mb-4 sm:mb-6">
+              <div className="p-4 rounded-xl border bg-white">
+                <div className="text-base sm:text-lg font-semibold mb-1">{displayName}</div>
+
+                {/* NEW: Address + Phone (no icons, per your preference) */}
+                <div className="text-sm text-gray-700 mb-3">
+                  <div><span className="font-medium">Phone:</span> {c?.phone || "—"}</div>
+                  <div><span className="font-medium">Address:</span> {c?.address || "—"}</div>
                 </div>
-                <div className="p-4">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
-                      <thead>
-                        <tr className="text-left border-b">
-                          <th className="py-2 pr-4">Item</th>
-                          <th className="py-2 pr-4">Quantity</th>
-                          <th className="py-2 pr-4 hidden sm:table-cell">Total Price</th>
+
+                {/* Items table for this customer */}
+                <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-left border-b">
+                        <th className="p-2">Item</th>
+                        <th className="p-2" style={{ width: 100 }}>Quantity</th>
+                        <th className="p-2" style={{ width: 160 }}>Total Price</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r, idx) => (
+                        <tr key={idx} className="border-b">
+                          <td className="p-2">{r.name}</td>
+                          <td className="p-2">{r.qty}</td>
+                          <td className="p-2">{formatTHB(r.amount)}</td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {(o.items || []).map((it, i) => (
-                          <tr key={i} className="border-b last:border-0">
-                            <td className="py-2 pr-4">{it.productName}</td>
-                            <td className="py-2 pr-4">{it.qty}</td>
-                            <td className="py-2 pr-4 hidden sm:table-cell">{formatTHB(Number(it.qty||0)*Number(it.price||0))}</td>
-                          </tr>
-                        ))}
-                        <tr>
-                          <td className="py-2 pr-4 text-gray-700">Delivery Fee</td>
-                          <td className="py-2 pr-4">—</td>
-                          <td className="py-2 pr-4 hidden sm:table-cell">{formatTHB(o.deliveryFee || 0)}</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2 pr-4 font-semibold">Total:</td>
-                          <td className="py-2 pr-4 font-semibold">
-                            {(o.items || []).reduce((s, it) => s + Number(it.qty || 0), 0)}
-                          </td>
-                          <td className="py-2 pr-4 font-semibold hidden sm:table-cell">
-                            {formatTHB(o.total || 0)}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
+                      ))}
+                      {/* Delivery row */}
+                      <tr>
+                        <td className="p-2">Delivery Fee</td>
+                        <td className="p-2">—</td>
+                        <td className="p-2">{formatTHB(deliveryTotal)}</td>
+                      </tr>
+                      {/* Grand total */}
+                      <tr>
+                        <td className="p-2 font-semibold">Total:</td>
+                        <td className="p-2 font-semibold">{rows.reduce((s,r)=>s+Number(r.qty||0),0)}</td>
+                        <td className="p-2 font-semibold">{formatTHB(grand)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          );
+        })}
+        {byCustomer.size === 0 && <div className="text-gray-500">No customers.</div>}
       </Section>
     </div>
   );
