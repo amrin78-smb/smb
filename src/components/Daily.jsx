@@ -90,9 +90,9 @@ export default function Daily() {
 
   return (
     <div className="max-w-6xl mx-auto">
-      {/* ONE combined section for totals + items */}
+      {/* ONE top section that includes date, totals, and the items table */}
       <Section
-        title="Daily Orders"
+        title="Daily Summary"
         right={
           <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
             <Input type="date" value={date} onChange={(e)=>setDate(e.target.value)} />
@@ -100,16 +100,16 @@ export default function Daily() {
           </div>
         }
       >
-        {/* Totals inline (no inner card) */}
+        {/* Date + totals */}
         <div className="mb-3">
-          <div className="text-sm text-gray-600">Total for {formatDateDMY(date)}</div>
+          <div className="text-sm text-gray-600">For {formatDateDMY(date)}</div>
           <div className="text-xl font-semibold">{formatTHB(dayGrand)}</div>
           <div className="text-xs text-gray-600">
             Subtotal {formatTHB(daySubtotal)} • Delivery {formatTHB(dayDelivery)}
           </div>
         </div>
 
-        {/* Items table directly below totals */}
+        {/* Items table (moved here) */}
         <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
           <table className="min-w-full text-sm">
             <thead>
@@ -135,7 +135,7 @@ export default function Daily() {
         </div>
       </Section>
 
-      {/* Customers for the day (separate section by design) */}
+      {/* Customers for the day (kept as a separate section) */}
       <Section title="Customers for the day">
         {[...byCustomer.entries()].map(([customerId, list]) => {
           const itemsMap = new Map();
