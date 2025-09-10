@@ -4,7 +4,7 @@ import {
   listMonths, listDaysInMonth, listOrdersByDate,
   createOrMergeOrder, updateOrderAndItems, deleteOrder as apiDeleteOrder
 } from "../api";
-import { todayStr, formatTHB, useFuzzy, formatDateDMY, formatMonthMY } from "../utils/format";
+import { todayStr, formatTHB, useFuzzy, formatDateDMY } from "../utils/format";
 import { generateInvoicePDF } from "../utils/invoice";
 
 const Section = ({ title, right, children }) => (
@@ -31,7 +31,7 @@ const Label = ({ children }) => (<label className="text-sm text-gray-600">{child
 
 /* ---------- Helper to render "September 2025" for your month keys ---------- */
 function formatMonthLong(m) {
-  // Accepts "YYYY-MM" or "MM-YYYY" (since formatMonthMY handles display elsewhere)
+  // Accepts "YYYY-MM" or "MM-YYYY"
   if (!m) return "";
   let y, mm;
   const a = /^(\d{4})-(\d{2})$/.exec(m);
@@ -49,9 +49,9 @@ export default function Orders() {
 
   // create form
   const [customerId, setCustomerId] = useState(0);
-  const [customerQ, setCustomerQ] = useState("");
+  const [customerQ, setCustomerQ] = useState("");       // <- typeahead query
   const [customerOpen, setCustomerOpen] = useState(false);
-  const [customerHi, setCustomerHi] = useState(0);
+  const [customerHi, setCustomerHi] = useState(0);      // highlighted index
 
   const [date, setDate] = useState(todayStr());
   const [notes, setNotes] = useState("");
@@ -76,8 +76,8 @@ export default function Orders() {
   useEffect(() => {
     (async () => {
       const [ps, cs, ms] = await Promise.all([listProducts(), listCustomers(), listMonths()]);
-      setProducts(ps); setCustomers(cs); setMonths(ms);
-      if (ms[0]) setSelectedMonth(ms[0]);
+      setProducts(ps || []); setCustomers(cs || []); setMonths(ms || []);
+      if (ms && ms[0]) setSelectedMonth(ms[0]);
     })().catch(console.error);
   }, []);
 
@@ -85,31 +85,30 @@ export default function Orders() {
     if (!selectedMonth) { setDays([]); setSelectedDay(""); setDayOrders([]); return; }
     (async () => {
       const ds = await listDaysInMonth(selectedMonth);
-      setDays(ds);
-      if (ds[0]) setSelectedDay(ds[0]);
+      setDays(ds || []);
+      if (ds && ds[0]) setSelectedDay(ds[0]);
     })().catch(console.error);
   }, [selectedMonth]);
 
   useEffect(() => {
     if (!selectedDay) { setDayOrders([]); return; }
-    (async () => setDayOrders(await listOrdersByDate(selectedDay)))().catch(console.error);
+    (async () => setDayOrders(await listOrdersByDate(selectedDay) || []))().catch(console.error);
   }, [selectedDay]);
 
-  const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products]);
-  const customersMap = useMemo(() => Object.fromEntries(customers.map(c => [c.id, c])), [customers]);
+  const productMap = useMemo(() => Object.fromEntries((products || []).map(p => [p.id, p])), [products]);
+  const customersMap = useMemo(() => Object.fromEntries((customers || []).map(c => [c.id, c])), [customers]);
 
-  const filteredProducts = useFuzzy(products, ["name"], q);
-  const filteredProductsEdit = useFuzzy(products, ["name"], editQ);
+  const filteredProducts = useFuzzy(products || [], ["name"], q);
+  const filteredProductsEdit = useFuzzy(products || [], ["name"], editQ);
 
-  // Customer typeahead (search name/phone/address; show top when empty)
+  // Customer typeahead — only show results AFTER typing
   const customersAlpha = useMemo(
-    () => customers.slice().sort((a,b)=>(a.name||"").localeCompare(b.name||"", "en", {sensitivity:"base"})),
+    () => (customers || []).slice().sort((a,b)=>(a.name||"").localeCompare(b.name||"", "en", {sensitivity:"base"})),
     [customers]
   );
-  const filteredCustomers = useMemo(() => {
-    if (!customerQ) return customersAlpha.slice(0, 12);
-    return useFuzzy(customersAlpha, ["name", "phone", "address"], customerQ).slice(0, 12);
-  }, [customersAlpha, customerQ, useFuzzy]);
+  const filteredCustomers = customerQ
+    ? useFuzzy(customersAlpha, ["name", "phone", "address"], customerQ).slice(0, 12)
+    : []; // show nothing until user types
 
   const subtotal = useMemo(() => items.reduce((s,it)=>s + Number(it.qty||0)*Number(it.price||0),0), [items]);
   const total = useMemo(() => Number(subtotal) + Number(deliveryFee||0), [subtotal, deliveryFee]);
@@ -158,11 +157,11 @@ export default function Orders() {
         items: items.map(it => ({ productId: it.productId, qty: Number(it.qty), price: Number(it.price) })),
       });
       setItems([]); setDeliveryFee(0); setNotes("");
-      const ms = await listMonths(); setMonths(ms);
+      const ms = await listMonths(); setMonths(ms || []);
       setSelectedMonth(date.slice(0,7));
-      const ds = await listDaysInMonth(date.slice(0,7)); setDays(ds);
+      const ds = await listDaysInMonth(date.slice(0,7)); setDays(ds || []);
       setSelectedDay(date);
-      setDayOrders(await listOrdersByDate(date));
+      setDayOrders(await listOrdersByDate(date) || []);
       alert("Order saved / consolidated");
     } catch (e) {
       console.error(e);
@@ -197,7 +196,7 @@ export default function Orders() {
         items: editItems.map(it => ({ productId: it.productId, qty: Number(it.qty), price: Number(it.price) })),
       });
       setEditOpen(false);
-      setDayOrders(await listOrdersByDate(editOrder.date));
+      setDayOrders(await listOrdersByDate(editOrder.date) || []);
       alert("Order updated");
     } catch (e) {
       console.error(e);
@@ -207,7 +206,7 @@ export default function Orders() {
   async function deleteOrder(o) {
     if (!confirm(`Delete order #${o.orderCode}?`)) return;
     await apiDeleteOrder(o.id);
-    setDayOrders(await listOrdersByDate(selectedDay));
+    setDayOrders(await listOrdersByDate(selectedDay) || []);
   }
   async function downloadInvoice(o) {
     try {
@@ -221,6 +220,7 @@ export default function Orders() {
 
   // Customer typeahead handlers
   function chooseCustomer(c) {
+    if (!c) return;
     setCustomerId(Number(c.id));
     setCustomerQ("");
     setCustomerOpen(false);
@@ -249,19 +249,20 @@ export default function Orders() {
             <Input
               placeholder="Type name / phone / address…"
               value={customerQ}
-              onChange={e => { setCustomerQ(e.target.value); setCustomerOpen(true); }}
+              onChange={e => { setCustomerQ(e.target.value); setCustomerOpen(true); setCustomerHi(0); }}
               onFocus={() => setCustomerOpen(true)}
               onKeyDown={onCustomerKey}
               onBlur={() => setTimeout(() => setCustomerOpen(false), 120)}
             />
-            {customerOpen && (customerQ || filteredCustomers.length > 0) && (
+            {/* Only show after typing */}
+            {customerOpen && customerQ && (
               <div className="absolute z-40 mt-1 w-full max-h-64 overflow-auto rounded-xl border bg-white shadow">
                 {filteredCustomers.length === 0 && (
                   <div className="px-3 py-2 text-sm text-gray-500">No matches</div>
                 )}
                 {filteredCustomers.map((c, idx) => (
                   <button
-                    key={c.id}
+                    key={c.id ?? `${c.name}-${idx}`}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => chooseCustomer(c)}
                     className={`w-full text-left px-3 py-2 hover:bg-gray-50 ${idx === customerHi ? "bg-gray-100" : ""}`}
@@ -374,12 +375,12 @@ export default function Orders() {
         right={
           selectedDay ? (
             <div className="text-xs sm:text-sm">
-              For {formatDateDMY(selectedDay)}: Subtotal <b>{formatTHB(daySubtotal)}</b> • Delivery <b>{formatTHB(dayDelivery)}</b> • Total <b>{formatTHB(dayGrand)}</b>
+              For {formatDateDMY(selectedDay)}: Subtotal <b>{formatTHB(daySubtotal)}</b> • Delivery <b>{formatTHB(dayDelivery)}</b> • <span className="font-bold">Total {formatTHB(dayGrand)}</span>
             </div>
           ) : null
         }
       >
-        {/* Replaced left month list with top dropdown; everything below is full width */}
+        {/* Top month dropdown; everything full width */}
         <div className="space-y-4">
           <div className="flex items-end gap-3 flex-wrap">
             <div className="min-w-[220px]">
