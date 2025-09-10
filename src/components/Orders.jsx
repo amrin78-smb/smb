@@ -446,7 +446,7 @@ export default function Orders() {
                         <td className="p-2">{customersMap[o.customerId]?.name ?? o.customerName ?? o.customerId}</td>
                         <td className="p-2">{formatTHB(o.subtotal)}</td>
                         <td className="p-2">{formatTHB(o.deliveryFee)}</td>
-                        <td className="p-2">{formatTHB(o.total)}</td>
+                        <td className="p-2 font-bold text-lg">{formatTHB(o.total)}</td>
                         <td className="p-2 hidden md:table-cell">{o.notes || ""}</td>
                         <td className="p-2 flex gap-2">
                           <Button onClick={() => openEdit(o)}>View / Edit</Button>
@@ -482,7 +482,7 @@ export default function Orders() {
                 <div key={o.id} className="border rounded-xl p-3 bg-white">
                   <div className="flex justify-between items-center">
                     <div className="font-medium">{idx + 1}. {o.orderCode}</div>
-                    <div className="text-sm">{formatTHB(o.total)}</div>
+                    <div className="text-sm font-bold text-lg">{formatTHB(o.total)}</div>
                   </div>
                   <div className="text-sm text-gray-600">{customersMap[o.customerId]?.name ?? o.customerName ?? o.customerId}</div>
                   <div className="text-xs text-gray-500 mt-1">
