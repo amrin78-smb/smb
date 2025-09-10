@@ -289,7 +289,6 @@ export default function Orders() {
         </div>
       </Section>
 
- /* Browse Orders */
 <Section
   title="Browse Orders by Month → Day"
   right={
