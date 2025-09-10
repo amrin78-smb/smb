@@ -141,18 +141,24 @@ export default function Daily() {
         {[...byCustomer.entries()].map(([customerId, list]) => {
           const itemsMap = new Map();
           let deliveryTotal = 0;
+
+          // Build item rows aggregated across this customer's orders.
+          // Collect notes per item from the parent order's notes field.
           for (const o of list) {
             deliveryTotal += Number(o.deliveryFee || 0);
             for (const it of (o.items || [])) {
               const key = String(it.productId ?? it.productName ?? "");
-              const prev = itemsMap.get(key) || { name: it.productName || "Unknown", qty: 0, amount: 0 };
+              const prev = itemsMap.get(key) || { name: it.productName || "Unknown", qty: 0, amount: 0, notes: new Set() };
               const qty = Number(it.qty || 0);
               const amt = qty * Number(it.price || 0);
               prev.qty += qty;
               prev.amount += amt;
+              const n = (o.notes || "").trim();
+              if (n) prev.notes.add(n);
               itemsMap.set(key, prev);
             }
           }
+
           const rows = Array.from(itemsMap.values());
           const lineTotal = rows.reduce((s,r)=>s+Number(r.amount||0),0);
           const grand = lineTotal + deliveryTotal;
@@ -175,6 +181,7 @@ export default function Daily() {
                         <th className="p-2">Item</th>
                         <th className="p-2" style={{ width: 100 }}>Quantity</th>
                         <th className="p-2" style={{ width: 160 }}>Total Price</th>
+                        <th className="p-2">Notes</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -183,17 +190,22 @@ export default function Daily() {
                           <td className="p-2">{r.name}</td>
                           <td className="p-2">{r.qty}</td>
                           <td className="p-2">{formatTHB(r.amount)}</td>
+                          <td className="p-2">
+                            {Array.from(r.notes || []).join(" • ") || "—"}
+                          </td>
                         </tr>
                       ))}
                       <tr>
                         <td className="p-2">Delivery Fee</td>
                         <td className="p-2">—</td>
                         <td className="p-2">{formatTHB(deliveryTotal)}</td>
+                        <td className="p-2">—</td>
                       </tr>
                       <tr>
                         <td className="p-2 font-semibold">Total:</td>
                         <td className="p-2 font-semibold">{rows.reduce((s,r)=>s+Number(r.qty||0),0)}</td>
                         <td className="p-2 font-semibold">{formatTHB(grand)}</td>
+                        <td className="p-2 font-semibold">—</td>
                       </tr>
                     </tbody>
                   </table>
