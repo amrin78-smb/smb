@@ -129,7 +129,7 @@ export default function Orders() {
   const dayDelivery = useMemo(() => dayOrders.reduce((s,o)=>s+Number(o.deliveryFee||0),0), [dayOrders]);
   const dayGrand = useMemo(() => dayOrders.reduce((s,o)=>s+Number(o.total||0),0), [dayOrders]);
 
-  // daily items aggregate (unchanged)
+  // daily items aggregate (unchanged logic)
   const dayItemTotals = useMemo(() => {
     const map = new Map();
     for (const o of dayOrders) {
@@ -231,18 +231,26 @@ export default function Orders() {
     }
   }
 
+  // Format YYYY-MM -> "September 2025"
+  const formatMonthLong = (ym) => {
+    try {
+      const d = new Date(`${ym}-01T00:00:00`);
+      return d.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+    } catch { return ym; }
+  };
+
   return (
     <>
       {/* Create Order */}
       <Section title="Create Order">
         <div className="grid grid-cols-12 gap-3">
-          <div className="col-span-12 sm:col-span-4">
+          <div className="col-span-12 sm:col-span-3">
             <Label>Date</Label>
             <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
           </div>
 
-          {/* CUSTOMER TYPE-AHEAD */}
-          <div className="col-span-12 sm:col-span-5">
+          {/* CUSTOMER TYPE-AHEAD (wider) */}
+          <div className="col-span-12 sm:col-span-7">
             <Label>Customer</Label>
             <Input
               ref={customerInputRef}
@@ -286,14 +294,14 @@ export default function Orders() {
             <Label>Delivery Fee</Label>
             <Input type="number" value={deliveryFee} onChange={e=>setDeliveryFee(Number(e.target.value)||0)} />
           </div>
-          <div className="col-span-6 sm:col-span-1">
+          <div className="col-span-6 sm:col-span-12">
             <Label>Notes</Label>
             <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional" />
           </div>
         </div>
 
         <div className="grid grid-cols-12 gap-3 mt-3">
-          <div className="col-span-12 sm:col-span-6">
+          <div className="col-span-12 sm:col-span-8">
             <Label>Add item</Label>
             <Input placeholder="Search product by name" value={q} onChange={e => setQ(e.target.value)} />
             {q && (
@@ -378,19 +386,17 @@ export default function Orders() {
         }
       >
         <div className="grid grid-cols-12 gap-4">
-          <div className="col-span-12 md:col-span-4">
+          {/* Month dropdown instead of list */}
+          <div className="col-span-12 md:col-span-3">
             <Label>Month</Label>
-            <div className="border rounded-xl max-h-64 overflow-auto bg-white">
+            <Select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}>
               {months.map(m => (
-                <div key={m} className={`p-2 cursor-pointer hover:bg-gray-100 ${selectedMonth === m ? "bg-blue-50" : ""}`} onClick={() => setSelectedMonth(m)}>
-                  {formatMonthMY(m)}
-                </div>
+                <option key={m} value={m}>{formatMonthLong(m)}</option>
               ))}
-              {months.length === 0 && <div className="p-2 text-gray-500">No months yet.</div>}
-            </div>
+            </Select>
           </div>
 
-          <div className="col-span-12 md:col-span-8">
+          <div className="col-span-12 md:col-span-9">
             <Label>Day</Label>
             <div className="flex flex-wrap gap-2 mb-3">
               {days.map(d => (
@@ -399,7 +405,7 @@ export default function Orders() {
               {days.length === 0 && <div className="text-gray-500">Select a month.</div>}
             </div>
 
-            {/* Items summary for the selected day (leave as table) */}
+            {/* Items summary for the selected day */}
             {selectedDay && (
               <div className="mb-4 p-3 rounded-xl border bg-white">
                 <div className="flex items-center justify-between mb-2">
@@ -466,7 +472,7 @@ export default function Orders() {
                         </td>
                       </tr>
 
-                      {/* ITEMS list view (one line per item) */}
+                      {/* ITEMS: two-column list on desktop */}
                       <tr className="bg-gray-50">
                         <td className="p-2 text-gray-500" colSpan={8}>
                           <div className="text-xs uppercase tracking-wide mb-2">Items</div>
@@ -474,7 +480,7 @@ export default function Orders() {
                             <div className="text-sm text-gray-500">No items.</div>
                           )}
                           {(o.items || []).length > 0 && (
-                            <div className="space-y-1 text-sm">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
                               {(o.items || []).map((it, i) => (
                                 <div key={i} className="leading-tight">
                                   {it.productName} × {it.qty} @ {formatTHB(it.price)} = <b>{formatTHB(it.qty * it.price)}</b>
