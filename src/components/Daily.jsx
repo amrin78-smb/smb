@@ -105,7 +105,8 @@ export default function Daily() {
           <div className="text-sm text-gray-600">For {formatDateDMY(date)}</div>
           <div className="text-xl font-semibold">{formatTHB(dayGrand)}</div>
           <div className="text-xs text-gray-600">
-            Subtotal {formatTHB(daySubtotal)} • Delivery {formatTHB(dayDelivery)}
+                Subtotal {formatTHB(daySubtotal)} • Delivery {formatTHB(dayDelivery)} • 
+                <span className="font-bold text-black"> Total {formatTHB(dayGrand)}</span>
           </div>
         </div>
 
