@@ -411,7 +411,7 @@ export default function Orders() {
                       </td>
                       <td className="p-2">{formatTHB(o.subtotal)}</td>
                       <td className="p-2">{formatTHB(o.deliveryFee)}</td>
-                      <td className="p-2">{formatTHB(o.total)}</td>
+                      <td className="p-2 font-bold text-black">{formatTHB(o.total)}</td>
                       <td className="p-2 hidden md:table-cell">{o.notes || "—"}</td>
                       <td className="p-2">
                         <div className="flex gap-2">
