@@ -19,13 +19,13 @@ const Button = ({ children, className = "", ...props }) => (
 
 /* ---------- Tabs (Dashboard removed) ---------- */
 const Tabs = {
-  ORDERS: "Orders",
   DAILY: "Daily Orders", // default landing tab
+  ORDERS: "Orders",
+  INSIGHTS: "Insights",
   PRODUCTS: "Products",
   CUSTOMERS: "Customers",
   SETTINGS: "Settings",
-  INSIGHTS: "Insights",
-};
+  };
 
 /* ---------- App ---------- */
 export default function App() {
