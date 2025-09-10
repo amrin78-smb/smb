@@ -238,14 +238,37 @@ export default function Orders() {
                 )}
               </div>
             )}
-            {/* Selected helper line (unchanged) */}
+            {/* NEW CODE: Selected customer info box */}
             {customerId ? (
-              <div className="mt-1 text-xs text-gray-600">
-                <span className="font-medium">Selected:</span> {customersMap[customerId]?.name || "—"}
-                {customersMap[customerId]?.phone ? ` • ${customersMap[customerId]?.phone}` : ""}
-                {customersMap[customerId]?.address ? ` • ${customersMap[customerId]?.address}` : ""}
+              <div className="mt-2 p-3 rounded-xl border-2 border-blue-200 bg-blue-50">
+                <div className="flex justify-between items-center mb-1">
+                  <h4 className="font-semibold text-base text-blue-800">Selected Customer</h4>
+                  {/* Optional: Add a button to unselect the customer */}
+                  <Button
+                    className="text-xs text-gray-600 hover:text-red-500"
+                    onClick={() => setCustomerId(0)}
+                  >
+                    Clear
+                  </Button>
+                </div>
+                <div className="text-sm">
+                  <div className="font-medium text-blue-900">
+                    {customersMap[customerId]?.name || "—"}
+                  </div>
+                  <div className="text-gray-700">
+                    {customersMap[customerId]?.phone || "—"}
+                  </div>
+                  <div className="text-gray-700">
+                    {customersMap[customerId]?.address || "—"}
+                  </div>
+                </div>
               </div>
-            ) : null}
+            ) : (
+              // Display a prompt if no customer is selected
+              <div className="mt-2 text-sm text-gray-500">
+                Select a customer by typing above.
+              </div>
+            )}
           </div>
 
           <div className="col-span-6 sm:col-span-2">
@@ -566,5 +589,3 @@ export default function Orders() {
         </div>
       )}
     </>
-  );
-}
