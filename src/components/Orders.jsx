@@ -4,7 +4,7 @@ import {
   listMonths, listDaysInMonth, listOrdersByDate,
   createOrMergeOrder, updateOrderAndItems, deleteOrder as apiDeleteOrder
 } from "../api";
-import { todayStr, formatTHB, useFuzzy, formatDateDMY } from "../utils/format";
+import { todayStr, formatTHB, useFuzzy, formatDateDMY, formatMonthMY } from "../utils/format";
 import { generateInvoicePDF } from "../utils/invoice";
 
 const Section = ({ title, right, children }) => (
@@ -29,35 +29,20 @@ const Select = ({ className = "", children, ...props }) => (
 );
 const Label = ({ children }) => (<label className="text-sm text-gray-600">{children}</label>);
 
-/* ---------- Helper to render "September 2025" for your month keys ---------- */
-function formatMonthLong(m) {
-  // Accepts "YYYY-MM" or "MM-YYYY"
-  if (!m) return "";
-  let y, mm;
-  const a = /^(\d{4})-(\d{2})$/.exec(m);
-  const b = /^(\d{2})-(\d{4})$/.exec(m);
-  if (a) { y = a[1]; mm = a[2]; }
-  else if (b) { mm = b[1]; y = b[2]; }
-  else return m;
-  const d = new Date(Number(y), Number(mm) - 1, 1);
-  return d.toLocaleString("en-US", { month: "long", year: "numeric" });
-}
-
 export default function Orders() {
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
 
   // create form
   const [customerId, setCustomerId] = useState(0);
-  const [customerQ, setCustomerQ] = useState("");       // <- typeahead query
-  const [customerOpen, setCustomerOpen] = useState(false);
-  const [customerHi, setCustomerHi] = useState(0);      // highlighted index
-
   const [date, setDate] = useState(todayStr());
   const [notes, setNotes] = useState("");
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [items, setItems] = useState([]);
   const [q, setQ] = useState("");
+
+  // NEW: customer type-ahead query (same concept as Add item)
+  const [customerQ, setCustomerQ] = useState("");
 
   // browse
   const [months, setMonths] = useState([]);
@@ -76,8 +61,8 @@ export default function Orders() {
   useEffect(() => {
     (async () => {
       const [ps, cs, ms] = await Promise.all([listProducts(), listCustomers(), listMonths()]);
-      setProducts(ps || []); setCustomers(cs || []); setMonths(ms || []);
-      if (ms && ms[0]) setSelectedMonth(ms[0]);
+      setProducts(ps); setCustomers(cs); setMonths(ms);
+      if (ms[0]) setSelectedMonth(ms[0]);
     })().catch(console.error);
   }, []);
 
@@ -85,30 +70,28 @@ export default function Orders() {
     if (!selectedMonth) { setDays([]); setSelectedDay(""); setDayOrders([]); return; }
     (async () => {
       const ds = await listDaysInMonth(selectedMonth);
-      setDays(ds || []);
-      if (ds && ds[0]) setSelectedDay(ds[0]);
+      setDays(ds);
+      if (ds[0]) setSelectedDay(ds[0]);
     })().catch(console.error);
   }, [selectedMonth]);
 
   useEffect(() => {
     if (!selectedDay) { setDayOrders([]); return; }
-    (async () => setDayOrders(await listOrdersByDate(selectedDay) || []))().catch(console.error);
+    (async () => setDayOrders(await listOrdersByDate(selectedDay)))().catch(console.error);
   }, [selectedDay]);
 
-  const productMap = useMemo(() => Object.fromEntries((products || []).map(p => [p.id, p])), [products]);
-  const customersMap = useMemo(() => Object.fromEntries((customers || []).map(c => [c.id, c])), [customers]);
+  const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products]);
+  const customersMap = useMemo(() => Object.fromEntries(customers.map(c => [c.id, c])), [customers]);
 
-  const filteredProducts = useFuzzy(products || [], ["name"], q);
-  const filteredProductsEdit = useFuzzy(products || [], ["name"], editQ);
+  // Add item filter (existing, working)
+  const filteredProducts = useFuzzy(products, ["name"], q);
+  const filteredProductsEdit = useFuzzy(products, ["name"], editQ);
 
-  // Customer typeahead — only show results AFTER typing
-  const customersAlpha = useMemo(
-    () => (customers || []).slice().sort((a,b)=>(a.name||"").localeCompare(b.name||"", "en", {sensitivity:"base"})),
-    [customers]
-  );
-  const filteredCustomers = customerQ
-    ? useFuzzy(customersAlpha, ["name", "phone", "address"], customerQ).slice(0, 12)
-    : []; // show nothing until user types
+  // CUSTOMER TYPE-AHEAD — EXACTLY like "Add item":
+  // - We compute filtered list from 'customers'
+  // - Show dropdown ONLY when 'customerQ' is non-empty
+  // - Click to select -> set customerId + clear query
+  const filteredCustomers = useFuzzy(customers, ["name", "phone", "address"], customerQ);
 
   const subtotal = useMemo(() => items.reduce((s,it)=>s + Number(it.qty||0)*Number(it.price||0),0), [items]);
   const total = useMemo(() => Number(subtotal) + Number(deliveryFee||0), [subtotal, deliveryFee]);
@@ -116,12 +99,12 @@ export default function Orders() {
   const dayDelivery = useMemo(() => dayOrders.reduce((s,o)=>s+Number(o.deliveryFee||0),0), [dayOrders]);
   const dayGrand = useMemo(() => dayOrders.reduce((s,o)=>s+Number(o.total||0),0), [dayOrders]);
 
-  // Aggregate items for the selected day
+  // NEW: aggregate items for the selected day (qty + total amount per product)
   const dayItemTotals = useMemo(() => {
     const map = new Map();
     for (const o of dayOrders) {
       for (const it of (o.items || [])) {
-        const key = it.productId ?? it.productName;
+        const key = it.productId ?? it.productName; // fall back to name if no id
         const name = it.productName || productMap[it.productId]?.name || "Unknown item";
         const qty = Number(it.qty || 0);
         const amount = qty * Number(it.price || 0);
@@ -157,11 +140,11 @@ export default function Orders() {
         items: items.map(it => ({ productId: it.productId, qty: Number(it.qty), price: Number(it.price) })),
       });
       setItems([]); setDeliveryFee(0); setNotes("");
-      const ms = await listMonths(); setMonths(ms || []);
+      const ms = await listMonths(); setMonths(ms);
       setSelectedMonth(date.slice(0,7));
-      const ds = await listDaysInMonth(date.slice(0,7)); setDays(ds || []);
+      const ds = await listDaysInMonth(date.slice(0,7)); setDays(ds);
       setSelectedDay(date);
-      setDayOrders(await listOrdersByDate(date) || []);
+      setDayOrders(await listOrdersByDate(date));
       alert("Order saved / consolidated");
     } catch (e) {
       console.error(e);
@@ -196,7 +179,7 @@ export default function Orders() {
         items: editItems.map(it => ({ productId: it.productId, qty: Number(it.qty), price: Number(it.price) })),
       });
       setEditOpen(false);
-      setDayOrders(await listOrdersByDate(editOrder.date) || []);
+      setDayOrders(await listOrdersByDate(editOrder.date));
       alert("Order updated");
     } catch (e) {
       console.error(e);
@@ -206,7 +189,7 @@ export default function Orders() {
   async function deleteOrder(o) {
     if (!confirm(`Delete order #${o.orderCode}?`)) return;
     await apiDeleteOrder(o.id);
-    setDayOrders(await listOrdersByDate(selectedDay) || []);
+    setDayOrders(await listOrdersByDate(selectedDay));
   }
   async function downloadInvoice(o) {
     try {
@@ -216,21 +199,6 @@ export default function Orders() {
       console.error(e);
       alert("Failed to generate invoice: " + (e?.message || String(e)));
     }
-  }
-
-  // Customer typeahead handlers
-  function chooseCustomer(c) {
-    if (!c) return;
-    setCustomerId(Number(c.id));
-    setCustomerQ("");
-    setCustomerOpen(false);
-  }
-  function onCustomerKey(e) {
-    if (!customerOpen) return;
-    if (e.key === "ArrowDown") { e.preventDefault(); setCustomerHi(i => Math.min(i + 1, filteredCustomers.length - 1)); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); setCustomerHi(i => Math.max(i - 1, 0)); }
-    else if (e.key === "Enter") { e.preventDefault(); if (filteredCustomers[customerHi]) chooseCustomer(filteredCustomers[customerHi]); }
-    else if (e.key === "Escape") { setCustomerOpen(false); }
   }
 
   return (
@@ -243,39 +211,34 @@ export default function Orders() {
             <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
           </div>
 
-          {/* Customer typeahead (replaces Select) */}
-          <div className="col-span-12 sm:col-span-5 relative">
+          {/* CUSTOMER TYPE-AHEAD — same concept as Add item */}
+          <div className="col-span-12 sm:col-span-5">
             <Label>Customer</Label>
             <Input
               placeholder="Type name / phone / address…"
               value={customerQ}
-              onChange={e => { setCustomerQ(e.target.value); setCustomerOpen(true); setCustomerHi(0); }}
-              onFocus={() => setCustomerOpen(true)}
-              onKeyDown={onCustomerKey}
-              onBlur={() => setTimeout(() => setCustomerOpen(false), 120)}
+              onChange={e => setCustomerQ(e.target.value)}
             />
-            {/* Only show after typing */}
-            {customerOpen && customerQ && (
-              <div className="absolute z-40 mt-1 w-full max-h-64 overflow-auto rounded-xl border bg-white shadow">
-                {filteredCustomers.length === 0 && (
-                  <div className="px-3 py-2 text-sm text-gray-500">No matches</div>
-                )}
-                {filteredCustomers.map((c, idx) => (
-                  <button
-                    key={c.id ?? `${c.name}-${idx}`}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => chooseCustomer(c)}
-                    className={`w-full text-left px-3 py-2 hover:bg-gray-50 ${idx === customerHi ? "bg-gray-100" : ""}`}
+            {customerQ && (
+              <div className="border rounded-xl mt-1 max-h-56 overflow-auto bg-white">
+                {filteredCustomers.slice(0, 20).map(c => (
+                  <div
+                    key={c.id}
+                    className="p-2 hover:bg-gray-100 cursor-pointer"
+                    onClick={() => { setCustomerId(Number(c.id)); setCustomerQ(""); }}
                   >
                     <div className="font-medium">{c.name || "—"}</div>
                     <div className="text-xs text-gray-600">
                       {c.phone || "—"}{c.address ? ` • ${c.address}` : ""}
                     </div>
-                  </button>
+                  </div>
                 ))}
+                {filteredCustomers.length === 0 && (
+                  <div className="p-2 text-gray-500">No matches</div>
+                )}
               </div>
             )}
-            {/* Selected helper line */}
+            {/* Selected helper line (unchanged) */}
             {customerId ? (
               <div className="mt-1 text-xs text-gray-600">
                 <span className="font-medium">Selected:</span> {customersMap[customerId]?.name || "—"}
@@ -353,7 +316,7 @@ export default function Orders() {
 
         <div className="hidden sm:flex items-center justify-between mt-3">
           <div className="text-base sm:text-lg font-semibold">
-            Subtotal: {formatTHB(subtotal)} &nbsp;•&nbsp; Delivery: {formatTHB(deliveryFee)} &nbsp;•&nbsp; <span className="font-bold">Total: {formatTHB(total)}</span>
+            Subtotal: {formatTHB(subtotal)} &nbsp;•&nbsp; Delivery: {formatTHB(deliveryFee)} &nbsp;•&nbsp; Total: {formatTHB(total)}
           </div>
           <Button className="bg-green-100" onClick={saveOrder}>Save Order</Button>
         </div>
@@ -375,158 +338,157 @@ export default function Orders() {
         right={
           selectedDay ? (
             <div className="text-xs sm:text-sm">
-              For {formatDateDMY(selectedDay)}: Subtotal <b>{formatTHB(daySubtotal)}</b> • Delivery <b>{formatTHB(dayDelivery)}</b> • <span className="font-bold">Total {formatTHB(dayGrand)}</span>
+              For {formatDateDMY(selectedDay)}: Subtotal <b>{formatTHB(daySubtotal)}</b> • Delivery <b>{formatTHB(dayDelivery)}</b> • Total <b>{formatTHB(dayGrand)}</b>
             </div>
           ) : null
         }
       >
-        {/* Top month dropdown; everything full width */}
-        <div className="space-y-4">
-          <div className="flex items-end gap-3 flex-wrap">
-            <div className="min-w-[220px]">
-              <Label>Month</Label>
-              <Select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="w-60">
-                {months.length === 0 && <option value="">No months yet</option>}
-                {months.map(m => (
-                  <option key={m} value={m}>{formatMonthLong(m)}</option>
-                ))}
-              </Select>
-            </div>
-
-            <div className="flex-1">
-              <Label>Day</Label>
-              <div className="flex flex-wrap gap-2 mb-3">
-                {days.map(d => (
-                  <Button key={d} className={selectedDay === d ? "bg-blue-100" : ""} onClick={() => setSelectedDay(d)}>{formatDateDMY(d)}</Button>
-                ))}
-                {days.length === 0 && <div className="text-gray-500">Select a month.</div>}
-              </div>
+        <div className="grid grid-cols-12 gap-4">
+          <div className="col-span-12 md:col-span-4">
+            <Label>Month</Label>
+            <div className="border rounded-xl max-h-64 overflow-auto bg-white">
+              {months.map(m => (
+                <div key={m} className={`p-2 cursor-pointer hover:bg-gray-100 ${selectedMonth === m ? "bg-blue-50" : ""}`} onClick={() => setSelectedMonth(m)}>
+                  {formatMonthMY(m)}
+                </div>
+              ))}
+              {months.length === 0 && <div className="p-2 text-gray-500">No months yet.</div>}
             </div>
           </div>
 
-          {/* Items summary (full width) */}
-          {selectedDay && (
-            <div className="p-3 rounded-2xl border bg-white">
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="font-medium">Items for {formatDateDMY(selectedDay)}</h4>
-                <div className="text-xs text-gray-500">{dayItemTotals.length} products</div>
-              </div>
-              {dayItemTotals.length === 0 ? (
-                <div className="text-sm text-gray-500">No items on this day.</div>
-              ) : (
-                <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="text-left border-b">
-                        <th className="py-2 pr-4">Item</th>
-                        <th className="py-2 pr-4">Qty</th>
-                        <th className="py-2 pr-4 hidden sm:table-cell">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dayItemTotals.map((it, i) => (
-                        <tr key={i} className="border-b last:border-0">
-                          <td className="py-2 pr-4">{it.name}</td>
-                          <td className="py-2 pr-4 font-semibold">{it.qty}</td>
-                          <td className="py-2 pr-4 hidden sm:table-cell">{formatTHB(it.amount)}</td>
+          <div className="col-span-12 md:col-span-8">
+            <Label>Day</Label>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {days.map(d => (
+                <Button key={d} className={selectedDay === d ? "bg-blue-100" : ""} onClick={() => setSelectedDay(d)}>{formatDateDMY(d)}</Button>
+              ))}
+              {days.length === 0 && <div className="text-gray-500">Select a month.</div>}
+            </div>
+
+            {/* Items summary for the selected day */}
+            {selectedDay && (
+              <div className="mb-4 p-3 rounded-xl border bg-white">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-medium">Items for {formatDateDMY(selectedDay)}</h4>
+                  <div className="text-xs text-gray-500">{dayItemTotals.length} products</div>
+                </div>
+                {dayItemTotals.length === 0 ? (
+                  <div className="text-sm text-gray-500">No items on this day.</div>
+                ) : (
+                  <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="text-left border-b">
+                          <th className="py-2 pr-4">Item</th>
+                          <th className="py-2 pr-4">Qty</th>
+                          <th className="py-2 pr-4 hidden sm:table-cell">Amount</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Desktop table (full width) */}
-          <div className="hidden sm:block overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left border-b">
-                  <th className="p-2">Seq</th>
-                  <th className="p-2">Order #</th>
-                  <th className="p-2">Customer</th>
-                  <th className="p-2">Subtotal</th>
-                  <th className="p-2">Delivery</th>
-                  <th className="p-2">Total</th>
-                  <th className="p-2 hidden md:table-cell">Notes</th>
-                  <th className="p-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dayOrders.map((o, idx) => (
-                  <React.Fragment key={o.id}>
-                    <tr className="border-b">
-                      <td className="p-2">{idx + 1}</td>
-                      <td className="p-2">{o.orderCode}</td>
-                      <td className="p-2">{customersMap[o.customerId]?.name ?? o.customerName ?? o.customerId}</td>
-                      <td className="p-2">{formatTHB(o.subtotal)}</td>
-                      <td className="p-2">{formatTHB(o.deliveryFee)}</td>
-                      <td className="p-2 font-bold">{formatTHB(o.total)}</td>
-                      <td className="p-2 hidden md:table-cell">{o.notes || ""}</td>
-                      <td className="p-2 flex gap-2">
-                        <Button onClick={() => openEdit(o)}>View / Edit</Button>
-                        <Button className="bg-red-100" onClick={() => deleteOrder(o)}>Delete</Button>
-                        <Button onClick={() => downloadInvoice(o)}>Invoice PDF</Button>
-                      </td>
-                    </tr>
-                    <tr className="bg-gray-50">
-                      <td className="p-2 text-gray-500" colSpan={8}>
-                        <div className="text-xs uppercase tracking-wide mb-1">Items</div>
-                        {(o.items || []).length === 0 && <div className="text-sm text-gray-500">No items.</div>}
-                        {(o.items || []).length > 0 && (
-                          <div className="flex flex-wrap gap-3">
-                            {(o.items || []).map((it, i) => (
-                              <div key={i} className="px-2 py-1 rounded-lg border bg-white">
-                                {it.productName} &times; {it.qty} @ {formatTHB(it.price)} = <b>{formatTHB(it.qty*it.price)}</b>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  </React.Fragment>
-                ))}
-                {selectedDay && dayOrders.length === 0 && <tr><td className="p-2 text-gray-500" colSpan={8}>No orders that day.</td></tr>}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Mobile cards */}
-          <div className="sm:hidden space-y-3">
-            {dayOrders.map((o, idx) => (
-              <div key={o.id} className="border rounded-2xl p-3 bg-white">
-                <div className="flex justify-between items-center">
-                  <div className="font-medium">{idx + 1}. {o.orderCode}</div>
-                  <div className="text-sm font-bold">{formatTHB(o.total)}</div>
-                </div>
-                <div className="text-sm text-gray-600">{customersMap[o.customerId]?.name ?? o.customerName ?? o.customerId}</div>
-                <div className="text-xs text-gray-500 mt-1">
-                  Subtotal {formatTHB(o.subtotal)} • Delivery {formatTHB(o.deliveryFee)}
-                </div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Button onClick={() => openEdit(o)}>View / Edit</Button>
-                  <Button className="bg-red-100" onClick={() => deleteOrder(o)}>Delete</Button>
-                  <Button onClick={() => downloadInvoice(o)}>Invoice PDF</Button>
-                </div>
-                {(o.items || []).length > 0 && (
-                  <div className="mt-2 border-t pt-2 text-sm">
-                    {(o.items || []).map((it, i) => (
-                      <div key={i} className="flex justify-between">
-                        <div className="mr-2">{it.productName} × {it.qty}</div>
-                        <div>{formatTHB(it.qty * it.price)}</div>
-                      </div>
-                    ))}
+                      </thead>
+                      <tbody>
+                        {dayItemTotals.map((it, i) => (
+                          <tr key={i} className="border-b last:border-0">
+                            <td className="py-2 pr-4">{it.name}</td>
+                            <td className="py-2 pr-4 font-semibold">{it.qty}</td>
+                            <td className="py-2 pr-4 hidden sm:table-cell">{formatTHB(it.amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
-            ))}
-            {selectedDay && dayOrders.length === 0 && <div className="text-gray-500">No orders that day.</div>}
+            )}
+
+            {/* Desktop table */}
+            <div className="hidden sm:block overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left border-b">
+                    <th className="p-2">Seq</th>
+                    <th className="p-2">Order #</th>
+                    <th className="p-2">Customer</th>
+                    <th className="p-2">Subtotal</th>
+                    <th className="p-2">Delivery</th>
+                    <th className="p-2">Total</th>
+                    <th className="p-2 hidden md:table-cell">Notes</th>
+                    <th className="p-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dayOrders.map((o, idx) => (
+                    <React.Fragment key={o.id}>
+                      <tr className="border-b">
+                        <td className="p-2">{idx + 1}</td>
+                        <td className="p-2">{o.orderCode}</td>
+                        <td className="p-2">{customersMap[o.customerId]?.name ?? o.customerName ?? o.customerId}</td>
+                        <td className="p-2">{formatTHB(o.subtotal)}</td>
+                        <td className="p-2">{formatTHB(o.deliveryFee)}</td>
+                        <td className="p-2">{formatTHB(o.total)}</td>
+                        <td className="p-2 hidden md:table-cell">{o.notes || ""}</td>
+                        <td className="p-2 flex gap-2">
+                          <Button onClick={() => openEdit(o)}>View / Edit</Button>
+                          <Button className="bg-red-100" onClick={() => deleteOrder(o)}>Delete</Button>
+                          <Button onClick={() => downloadInvoice(o)}>Invoice PDF</Button>
+                        </td>
+                      </tr>
+                      <tr className="bg-gray-50">
+                        <td className="p-2 text-gray-500" colSpan={8}>
+                          <div className="text-xs uppercase tracking-wide mb-1">Items</div>
+                          {(o.items || []).length === 0 && <div className="text-sm text-gray-500">No items.</div>}
+                          {(o.items || []).length > 0 && (
+                            <div className="flex flex-wrap gap-3">
+                              {(o.items || []).map((it, i) => (
+                                <div key={i} className="px-2 py-1 rounded-lg border bg-white">
+                                  {it.productName} &times; {it.qty} @ {formatTHB(it.price)} = <b>{formatTHB(it.qty*it.price)}</b>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    </React.Fragment>
+                  ))}
+                  {selectedDay && dayOrders.length === 0 && <tr><td className="p-2 text-gray-500" colSpan={8}>No orders that day.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile cards */}
+            <div className="sm:hidden space-y-3">
+              {dayOrders.map((o, idx) => (
+                <div key={o.id} className="border rounded-xl p-3 bg-white">
+                  <div className="flex justify-between items-center">
+                    <div className="font-medium">{idx + 1}. {o.orderCode}</div>
+                    <div className="text-sm">{formatTHB(o.total)}</div>
+                  </div>
+                  <div className="text-sm text-gray-600">{customersMap[o.customerId]?.name ?? o.customerName ?? o.customerId}</div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Subtotal {formatTHB(o.subtotal)} • Delivery {formatTHB(o.deliveryFee)}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button onClick={() => openEdit(o)}>View / Edit</Button>
+                    <Button className="bg-red-100" onClick={() => deleteOrder(o)}>Delete</Button>
+                    <Button onClick={() => downloadInvoice(o)}>Invoice PDF</Button>
+                  </div>
+                  {(o.items || []).length > 0 && (
+                    <div className="mt-2 border-t pt-2 text-sm">
+                      {(o.items || []).map((it, i) => (
+                        <div key={i} className="flex justify-between">
+                          <div className="mr-2">{it.productName} × {it.qty}</div>
+                          <div>{formatTHB(it.qty * it.price)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {selectedDay && dayOrders.length === 0 && <div className="text-gray-500">No orders that day.</div>}
+            </div>
           </div>
         </div>
       </Section>
 
-      {/* Edit modal (unchanged core logic) */}
+      {/* Edit modal (unchanged logic) */}
       {editOpen && editOrder && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-3xl rounded-2xl shadow-xl border p-4 sm:p-5">
