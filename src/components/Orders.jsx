@@ -4,7 +4,7 @@ import {
   listMonths, listDaysInMonth, listOrdersByDate,
   createOrMergeOrder, updateOrderAndItems, deleteOrder as apiDeleteOrder
 } from "../api";
-import { todayStr, formatTHB, useFuzzy, formatDateDMY, formatMonthMY } from "../utils/format";
+import { todayStr, formatTHB, useFuzzy, formatDateDMY } from "../utils/format";
 import { generateInvoicePDF } from "../utils/invoice";
 
 const Section = ({ title, right, children }) => (
@@ -29,7 +29,7 @@ const Select = ({ className = "", children, ...props }) => (
 );
 const Label = ({ children }) => (<label className="text-sm text-gray-600">{children}</label>);
 
-/* ----- Big, readable customer card ----- */
+/* Big, readable customer card */
 function SelectedCustomerCard({ customer, onClear }) {
   if (!customer) return null;
   return (
@@ -129,7 +129,7 @@ export default function Orders() {
   const dayDelivery = useMemo(() => dayOrders.reduce((s,o)=>s+Number(o.deliveryFee||0),0), [dayOrders]);
   const dayGrand = useMemo(() => dayOrders.reduce((s,o)=>s+Number(o.total||0),0), [dayOrders]);
 
-  // daily items aggregate (unchanged logic)
+  // daily items aggregate for header table
   const dayItemTotals = useMemo(() => {
     const map = new Map();
     for (const o of dayOrders) {
@@ -386,12 +386,19 @@ export default function Orders() {
         }
       >
         <div className="grid grid-cols-12 gap-4">
-          {/* Month dropdown instead of list */}
+          {/* Month dropdown */}
           <div className="col-span-12 md:col-span-3">
             <Label>Month</Label>
             <Select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}>
               {months.map(m => (
-                <option key={m} value={m}>{formatMonthLong(m)}</option>
+                <option key={m} value={m}>
+                  {(() => {
+                    try {
+                      const d = new Date(`${m}-01T00:00:00`);
+                      return d.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+                    } catch { return m; }
+                  })()}
+                </option>
               ))}
             </Select>
           </div>
@@ -472,22 +479,36 @@ export default function Orders() {
                         </td>
                       </tr>
 
-                      {/* ITEMS: two-column list on desktop */}
-                      <tr className="bg-gray-50">
-                        <td className="p-2 text-gray-500" colSpan={8}>
-                          <div className="text-xs uppercase tracking-wide mb-2">Items</div>
-                          {(o.items || []).length === 0 && (
-                            <div className="text-sm text-gray-500">No items.</div>
-                          )}
-                          {(o.items || []).length > 0 && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
-                              {(o.items || []).map((it, i) => (
-                                <div key={i} className="leading-tight">
-                                  {it.productName} × {it.qty} @ {formatTHB(it.price)} = <b>{formatTHB(it.qty * it.price)}</b>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                      {/* ITEMS: three-column sub-table (Item, Qty, Total). 
+                          Full-width to align with left edge of the right column. */}
+                      <tr>
+                        <td className="p-0" colSpan={8}>
+                          <div className="-mx-4 sm:-mx-0 px-4 sm:px-0 py-2 bg-gray-50">
+                            {(o.items || []).length === 0 ? (
+                              <div className="text-sm text-gray-500 px-2">No items.</div>
+                            ) : (
+                              <div className="overflow-x-auto">
+                                <table className="min-w-full text-sm">
+                                  <thead>
+                                    <tr className="text-left">
+                                      <th className="px-2 py-2 w-2/3">Item</th>
+                                      <th className="px-2 py-2 w-1/6">Qty</th>
+                                      <th className="px-2 py-2 w-1/6">Total</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {(o.items || []).map((it, i) => (
+                                      <tr key={i} className="border-t">
+                                        <td className="px-2 py-2">{it.productName}</td>
+                                        <td className="px-2 py-2 font-semibold">{it.qty}</td>
+                                        <td className="px-2 py-2">{formatTHB((Number(it.qty)||0) * (Number(it.price)||0))}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     </React.Fragment>
@@ -518,11 +539,15 @@ export default function Orders() {
                   </div>
 
                   {(o.items || []).length > 0 && (
-                    <div className="mt-2 border-t pt-2 text-sm space-y-1">
+                    <div className="mt-2 border-t pt-2 text-sm">
+                      <div className="grid grid-cols-3 text-xs font-semibold text-gray-600">
+                        <div className="pr-2">Item</div><div>Qty</div><div>Total</div>
+                      </div>
                       {(o.items || []).map((it, i) => (
-                        <div key={i} className="flex justify-between">
-                          <div className="mr-2">{it.productName} × {it.qty}</div>
-                          <div>{formatTHB(it.qty * it.price)}</div>
+                        <div key={i} className="grid grid-cols-3 gap-2 py-1 border-b last:border-0">
+                          <div className="pr-2">{it.productName}</div>
+                          <div>{it.qty}</div>
+                          <div>{formatTHB((Number(it.qty)||0) * (Number(it.price)||0))}</div>
                         </div>
                       ))}
                     </div>
