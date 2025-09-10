@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   listProducts, listCustomers,
   listMonths, listDaysInMonth, listOrdersByDate,
@@ -29,6 +29,38 @@ const Select = ({ className = "", children, ...props }) => (
 );
 const Label = ({ children }) => (<label className="text-sm text-gray-600">{children}</label>);
 
+/* ----- Big, readable customer card ----- */
+function SelectedCustomerCard({ customer, onClear }) {
+  if (!customer) return null;
+  return (
+    <div className="mt-2 p-3 sm:p-4 rounded-2xl border bg-blue-50/40">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-base sm:text-xl font-semibold">{customer.name || "Unnamed customer"}</div>
+          <div className="mt-1 text-sm sm:text-base text-gray-800">
+            {customer.phone ? (
+              <div className="leading-snug">
+                <span className="font-medium">Phone:</span> <a href={`tel:${customer.phone}`} className="underline">{customer.phone}</a>
+              </div>
+            ) : null}
+            {customer.address ? (
+              <div className="leading-snug mt-1">
+                <span className="font-medium">Address:</span> {customer.address}
+              </div>
+            ) : null}
+            {!customer.phone && !customer.address ? (
+              <div className="leading-snug text-gray-600">No phone/address saved.</div>
+            ) : null}
+          </div>
+        </div>
+        <div className="shrink-0">
+          <Button className="bg-white" onClick={onClear}>Change</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Orders() {
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -43,6 +75,7 @@ export default function Orders() {
 
   // NEW: customer type-ahead query (same concept as Add item)
   const [customerQ, setCustomerQ] = useState("");
+  const customerInputRef = useRef(null); // focus after clearing
 
   // browse
   const [months, setMonths] = useState([]);
@@ -87,10 +120,7 @@ export default function Orders() {
   const filteredProducts = useFuzzy(products, ["name"], q);
   const filteredProductsEdit = useFuzzy(products, ["name"], editQ);
 
-  // CUSTOMER TYPE-AHEAD — EXACTLY like "Add item":
-  // - We compute filtered list from 'customers'
-  // - Show dropdown ONLY when 'customerQ' is non-empty
-  // - Click to select -> set customerId + clear query
+  // CUSTOMER TYPE-AHEAD — same approach as items
   const filteredCustomers = useFuzzy(customers, ["name", "phone", "address"], customerQ);
 
   const subtotal = useMemo(() => items.reduce((s,it)=>s + Number(it.qty||0)*Number(it.price||0),0), [items]);
@@ -99,12 +129,12 @@ export default function Orders() {
   const dayDelivery = useMemo(() => dayOrders.reduce((s,o)=>s+Number(o.deliveryFee||0),0), [dayOrders]);
   const dayGrand = useMemo(() => dayOrders.reduce((s,o)=>s+Number(o.total||0),0), [dayOrders]);
 
-  // NEW: aggregate items for the selected day (qty + total amount per product)
+  // NEW: aggregate items for the selected day
   const dayItemTotals = useMemo(() => {
     const map = new Map();
     for (const o of dayOrders) {
       for (const it of (o.items || [])) {
-        const key = it.productId ?? it.productName; // fall back to name if no id
+        const key = it.productId ?? it.productName;
         const name = it.productName || productMap[it.productId]?.name || "Unknown item";
         const qty = Number(it.qty || 0);
         const amount = qty * Number(it.price || 0);
@@ -215,6 +245,7 @@ export default function Orders() {
           <div className="col-span-12 sm:col-span-5">
             <Label>Customer</Label>
             <Input
+              ref={customerInputRef}
               placeholder="Type name / phone / address…"
               value={customerQ}
               onChange={e => setCustomerQ(e.target.value)}
@@ -238,37 +269,17 @@ export default function Orders() {
                 )}
               </div>
             )}
-            {/* NEW CODE: Selected customer info box */}
+
+            {/* BIG selected customer card (replaces small helper line) */}
             {customerId ? (
-              <div className="mt-2 p-3 rounded-xl border-2 border-blue-200 bg-blue-50">
-                <div className="flex justify-between items-center mb-1">
-                  <h4 className="font-semibold text-base text-blue-800">Selected Customer</h4>
-                  {/* Optional: Add a button to unselect the customer */}
-                  <Button
-                    className="text-xs text-gray-600 hover:text-red-500"
-                    onClick={() => setCustomerId(0)}
-                  >
-                    Clear
-                  </Button>
-                </div>
-                <div className="text-sm">
-                  <div className="font-medium text-blue-900">
-                    {customersMap[customerId]?.name || "—"}
-                  </div>
-                  <div className="text-gray-700">
-                    {customersMap[customerId]?.phone || "—"}
-                  </div>
-                  <div className="text-gray-700">
-                    {customersMap[customerId]?.address || "—"}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              // Display a prompt if no customer is selected
-              <div className="mt-2 text-sm text-gray-500">
-                Select a customer by typing above.
-              </div>
-            )}
+              <SelectedCustomerCard
+                customer={customersMap[customerId]}
+                onClear={() => {
+                  setCustomerId(0);
+                  setTimeout(() => customerInputRef.current?.focus(), 0);
+                }}
+              />
+            ) : null}
           </div>
 
           <div className="col-span-6 sm:col-span-2">
@@ -446,7 +457,7 @@ export default function Orders() {
                         <td className="p-2">{customersMap[o.customerId]?.name ?? o.customerName ?? o.customerId}</td>
                         <td className="p-2">{formatTHB(o.subtotal)}</td>
                         <td className="p-2">{formatTHB(o.deliveryFee)}</td>
-                        <td className="p-2 font-bold text-lg">{formatTHB(o.total)}</td>
+                        <td className="p-2">{formatTHB(o.total)}</td>
                         <td className="p-2 hidden md:table-cell">{o.notes || ""}</td>
                         <td className="p-2 flex gap-2">
                           <Button onClick={() => openEdit(o)}>View / Edit</Button>
@@ -482,7 +493,7 @@ export default function Orders() {
                 <div key={o.id} className="border rounded-xl p-3 bg-white">
                   <div className="flex justify-between items-center">
                     <div className="font-medium">{idx + 1}. {o.orderCode}</div>
-                    <div className="text-sm font-bold text-lg">{formatTHB(o.total)}</div>
+                    <div className="text-sm">{formatTHB(o.total)}</div>
                   </div>
                   <div className="text-sm text-gray-600">{customersMap[o.customerId]?.name ?? o.customerName ?? o.customerId}</div>
                   <div className="text-xs text-gray-500 mt-1">
