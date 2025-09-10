@@ -289,179 +289,161 @@ export default function Orders() {
         </div>
       </Section>
 
-<Section
-  title="Browse Orders by Month → Day"
-  right={
-    selectedDay ? (
-      <div className="text-xs sm:text-sm">
-        For {formatDateDMY(selectedDay)}: Subtotal <b>{formatTHB(daySubtotal)}</b> • Delivery <b>{formatTHB(dayDelivery)}</b> • Total <b>{formatTHB(dayGrand)}</b>
-      </div>
-    ) : null
-  }
->
-  {/** Helper: turn "08-2025" or "2025-08" into "August 2025" */}
-  {(() => {
-    function formatMonthLong(v) {
-      if (!v) return "";
-      let y, m;
-      let m1 = /^(\d{2})-(\d{4})$/.exec(v);   // MM-YYYY
-      let m2 = /^(\d{4})-(\d{2})$/.exec(v);   // YYYY-MM
-      if (m1) { m = m1[1]; y = m1[2]; }
-      else if (m2) { y = m2[1]; m = m2[2]; }
-      else return v;
-      const d = new Date(Number(y), Number(m) - 1, 1);
-      return d.toLocaleString("en-US", { month: "long", year: "numeric" });
-    }
-
-    return (
-      <div className="space-y-4">
-        {/* Month dropdown now sits above everything, freeing full width below */}
-        <div className="flex items-end gap-3 flex-wrap">
-          <div className="min-w-[220px]">
-            <label className="block text-sm text-gray-600 mb-1">Month</label>
-            <select
-              className="px-3 py-2 rounded-xl border bg-white w-60"
-              value={selectedMonth || ""}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-            >
-              <option value="" disabled>Select month…</option>
-              {months.map((m) => (
-                <option key={m} value={m}>{formatMonthLong(m)}</option>
+      {/* Browse Orders */}
+      <Section
+        title="Browse Orders by Month → Day"
+        right={
+          selectedDay ? (
+            <div className="text-xs sm:text-sm">
+              For {formatDateDMY(selectedDay)}: Subtotal <b>{formatTHB(daySubtotal)}</b> • Delivery <b>{formatTHB(dayDelivery)}</b> • Total <b>{formatTHB(dayGrand)}</b>
+            </div>
+          ) : null
+        }
+      >
+        <div className="grid grid-cols-12 gap-4">
+          <div className="col-span-12 md:col-span-4">
+            <Label>Month</Label>
+            <div className="border rounded-xl max-h-64 overflow-auto bg-white">
+              {months.map(m => (
+                <div key={m} className={`p-2 cursor-pointer hover:bg-gray-100 ${selectedMonth === m ? "bg-blue-50" : ""}`} onClick={() => setSelectedMonth(m)}>
+                  {formatMonthMY(m)}
+                </div>
               ))}
-              {months.length === 0 && <option value="">No months yet</option>}
-            </select>
-          </div>
-
-          {/* Day quick-pick */}
-          <div className="flex-1">
-            <label className="block text-sm text-gray-600 mb-1">Day</label>
-            <div className="flex flex-wrap gap-2">
-              {days.map((d) => (
-                <Button
-                  key={d}
-                  className={selectedDay === d ? "bg-blue-100" : ""}
-                  onClick={() => setSelectedDay(d)}
-                >
-                  {formatDateDMY(d)}
-                </Button>
-              ))}
-              {days.length === 0 && <div className="text-sm text-gray-500">No days in this month.</div>}
+              {months.length === 0 && <div className="p-2 text-gray-500">No months yet.</div>}
             </div>
           </div>
-        </div>
 
-        {/* Items for the selected day — now FULL WIDTH */}
-        <div className="rounded-2xl border p-3 sm:p-4 bg-white">
-          <div className="flex items-center justify-between mb-2">
-            <h4 className="font-semibold">Items for {formatDateDMY(selectedDay)}</h4>
-            <div className="text-xs text-gray-500">{dayItemTotals.length} products</div>
-          </div>
+          <div className="col-span-12 md:col-span-8">
+            <Label>Day</Label>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {days.map(d => (
+                <Button key={d} className={selectedDay === d ? "bg-blue-100" : ""} onClick={() => setSelectedDay(d)}>{formatDateDMY(d)}</Button>
+              ))}
+              {days.length === 0 && <div className="text-gray-500">Select a month.</div>}
+            </div>
 
-          {dayItemTotals.length === 0 ? (
-            <div className="text-sm text-gray-500">No items on this day.</div>
-          ) : (
-            <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
+            {/* NEW: Items summary for the selected day */}
+            {selectedDay && (
+              <div className="mb-4 p-3 rounded-xl border bg-white">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-medium">Items for {formatDateDMY(selectedDay)}</h4>
+                  <div className="text-xs text-gray-500">{dayItemTotals.length} products</div>
+                </div>
+                {dayItemTotals.length === 0 ? (
+                  <div className="text-sm text-gray-500">No items on this day.</div>
+                ) : (
+                  <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="text-left border-b">
+                          <th className="py-2 pr-4">Item</th>
+                          <th className="py-2 pr-4">Qty</th>
+                          <th className="py-2 pr-4 hidden sm:table-cell">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dayItemTotals.map((it, i) => (
+                          <tr key={i} className="border-b last:border-0">
+                            <td className="py-2 pr-4">{it.name}</td>
+                            <td className="py-2 pr-4 font-semibold">{it.qty}</td>
+                            <td className="py-2 pr-4 hidden sm:table-cell">{formatTHB(it.amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Desktop table */}
+            <div className="hidden sm:block overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="text-left border-b">
-                    <th className="py-2 pr-4">Item</th>
-                    <th className="py-2 pr-4">Qty</th>
-                    <th className="py-2 pr-4 hidden sm:table-cell">Amount</th>
+                    <th className="p-2">Seq</th>
+                    <th className="p-2">Order #</th>
+                    <th className="p-2">Customer</th>
+                    <th className="p-2">Subtotal</th>
+                    <th className="p-2">Delivery</th>
+                    <th className="p-2">Total</th>
+                    <th className="p-2 hidden md:table-cell">Notes</th>
+                    <th className="p-2">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {dayItemTotals.map((r, i) => (
-                    <tr key={i} className="border-b">
-                      <td className="py-2 pr-4">{r.name}</td>
-                      <td className="py-2 pr-4">{r.qty}</td>
-                      <td className="py-2 pr-4 hidden sm:table-cell">{formatTHB(r.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Customer orders for the selected day — also FULL WIDTH now */}
-        <div className="rounded-2xl border p-3 sm:p-4 bg-white">
-          <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left border-b">
-                  <th className="p-2">Seq</th>
-                  <th className="p-2">Order #</th>
-                  <th className="p-2">Customer</th>
-                  <th className="p-2">Subtotal</th>
-                  <th className="p-2">Delivery</th>
-                  <th className="p-2">Total</th>
-                  <th className="p-2 hidden md:table-cell">Notes</th>
-                  <th className="p-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dayOrders.map((o, idx) => (
-                  <React.Fragment key={o.id}>
-                    <tr className="border-b">
-                      <td className="p-2">{idx + 1}</td>
-                      <td className="p-2">{o.orderCode}</td>
-                      <td className="p-2">
-                        {customersMap[o.customerId]?.name ?? o.customerName ?? o.customerId}
-                      </td>
-                      <td className="p-2">{formatTHB(o.subtotal)}</td>
-                      <td className="p-2">{formatTHB(o.deliveryFee)}</td>
-                      <td className="p-2 font-bold text-black">{formatTHB(o.total)}</td>
-                      <td className="p-2 hidden md:table-cell">{o.notes || "—"}</td>
-                      <td className="p-2">
-                        <div className="flex gap-2">
+                  {dayOrders.map((o, idx) => (
+                    <React.Fragment key={o.id}>
+                      <tr className="border-b">
+                        <td className="p-2">{idx + 1}</td>
+                        <td className="p-2">{o.orderCode}</td>
+                        <td className="p-2">{customersMap[o.customerId]?.name ?? o.customerName ?? o.customerId}</td>
+                        <td className="p-2">{formatTHB(o.subtotal)}</td>
+                        <td className="p-2">{formatTHB(o.deliveryFee)}</td>
+                        <td className="p-2">{formatTHB(o.total)}</td>
+                        <td className="p-2 hidden md:table-cell">{o.notes || ""}</td>
+                        <td className="p-2 flex gap-2">
                           <Button onClick={() => openEdit(o)}>View / Edit</Button>
                           <Button className="bg-red-100" onClick={() => deleteOrder(o)}>Delete</Button>
                           <Button onClick={() => downloadInvoice(o)}>Invoice PDF</Button>
-                        </div>
-                      </td>
-                    </tr>
-
-                    {/* Items row (collapsible style stays as you had it) */}
-                    {o.items?.length ? (
-                      <tr className="border-b bg-gray-50">
-                        <td colSpan={8} className="p-2">
-                          <div className="text-xs uppercase tracking-wide text-gray-600 mb-1">Items</div>
-                          <div className="overflow-x-auto">
-                            <table className="min-w-full text-sm">
-                              <thead>
-                                <tr className="text-left border-b">
-                                  <th className="p-2">Item</th>
-                                  <th className="p-2" style={{ width: 100 }}>Qty</th>
-                                  <th className="p-2" style={{ width: 160 }}>Price</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {o.items.map((it, ii) => (
-                                  <tr key={ii} className="border-b">
-                                    <td className="p-2">{it.productName}</td>
-                                    <td className="p-2">{it.qty}</td>
-                                    <td className="p-2">{formatTHB(Number(it.qty || 0) * Number(it.price || 0))}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
                         </td>
                       </tr>
-                    ) : null}
-                  </React.Fragment>
-                ))}
-                {dayOrders.length === 0 && (
-                  <tr><td colSpan={8} className="p-2 text-gray-500">No orders on this day.</td></tr>
-                )}
-              </tbody>
-            </table>
+                      <tr className="bg-gray-50">
+                        <td className="p-2 text-gray-500" colSpan={8}>
+                          <div className="text-xs uppercase tracking-wide mb-1">Items</div>
+                          {(o.items || []).length === 0 && <div className="text-sm text-gray-500">No items.</div>}
+                          {(o.items || []).length > 0 && (
+                            <div className="flex flex-wrap gap-3">
+                              {(o.items || []).map((it, i) => (
+                                <div key={i} className="px-2 py-1 rounded-lg border bg-white">
+                                  {it.productName} &times; {it.qty} @ {formatTHB(it.price)} = <b>{formatTHB(it.qty*it.price)}</b>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    </React.Fragment>
+                  ))}
+                  {selectedDay && dayOrders.length === 0 && <tr><td className="p-2 text-gray-500" colSpan={8}>No orders that day.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile cards */}
+            <div className="sm:hidden space-y-3">
+              {dayOrders.map((o, idx) => (
+                <div key={o.id} className="border rounded-xl p-3 bg-white">
+                  <div className="flex justify-between items-center">
+                    <div className="font-medium">{idx + 1}. {o.orderCode}</div>
+                    <div className="text-sm">{formatTHB(o.total)}</div>
+                  </div>
+                  <div className="text-sm text-gray-600">{customersMap[o.customerId]?.name ?? o.customerName ?? o.customerId}</div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Subtotal {formatTHB(o.subtotal)} • Delivery {formatTHB(o.deliveryFee)}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button onClick={() => openEdit(o)}>View / Edit</Button>
+                    <Button className="bg-red-100" onClick={() => deleteOrder(o)}>Delete</Button>
+                    <Button onClick={() => downloadInvoice(o)}>Invoice PDF</Button>
+                  </div>
+                  {(o.items || []).length > 0 && (
+                    <div className="mt-2 border-t pt-2 text-sm">
+                      {(o.items || []).map((it, i) => (
+                        <div key={i} className="flex justify-between">
+                          <div className="mr-2">{it.productName} × {it.qty}</div>
+                          <div>{formatTHB(it.qty * it.price)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {selectedDay && dayOrders.length === 0 && <div className="text-gray-500">No orders that day.</div>}
+            </div>
           </div>
         </div>
-      </div>
-    );
-  })()}
-</Section>
+      </Section>
 
       {/* Edit modal (unchanged logic) */}
       {editOpen && editOrder && (
