@@ -21,53 +21,99 @@ const err = (status, message) => ({
 
 export const handler = async (event) => {
   try {
-    // CORS preflight (only needed if you later send custom headers)
+    // CORS preflight
     if (event.httpMethod === "OPTIONS") {
       return {
         statusCode: 204,
         headers: {
           "access-control-allow-origin": "*",
-          "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
+          "access-control-allow-methods":
+            "GET,POST,PUT,DELETE,PATCH,OPTIONS",
           "access-control-allow-headers": "content-type",
         },
         body: "",
       };
     }
 
+    // GET: list products (active only by default)
     if (event.httpMethod === "GET") {
-      const rows = await sql`select id, name, price from products order by name`;
+      const includeInactive =
+        event.queryStringParameters?.include_inactive === "1";
+
+      const rows = includeInactive
+        ? await sql/*sql*/`
+            select id, name, price, active
+            from products
+            order by name
+          `
+        : await sql/*sql*/`
+            select id, name, price, active
+            from products
+            where active = true
+            order by name
+          `;
+
       return ok(rows);
     }
 
+    // POST: add product
     if (event.httpMethod === "POST") {
       const body = JSON.parse(event.body || "{}");
       if (!body.name) return err(400, "name is required");
       const price = Number(body.price ?? 0);
-      const [row] = await sql`
-        insert into products (name, price)
-        values (${body.name}, ${price})
-        returning id, name, price
+      const active = price > 0; // auto-inactive if 0
+
+      const [row] = await sql/*sql*/`
+        insert into products (name, price, active)
+        values (${body.name}, ${price}, ${active})
+        returning id, name, price, active
       `;
       return ok(row, 201);
     }
 
+    // PUT: update product
     if (event.httpMethod === "PUT") {
       const body = JSON.parse(event.body || "{}");
       if (!body.id) return err(400, "id is required");
       const price = Number(body.price ?? 0);
-      await sql`
+      const active = price > 0; // keep consistent
+
+      await sql/*sql*/`
         update products
-        set name=${body.name}, price=${price}
+        set name=${body.name},
+            price=${price},
+            active=${active}
         where id=${body.id}
       `;
       return ok({ updated: true });
     }
 
+    // DELETE: soft delete (set active=false)
     if (event.httpMethod === "DELETE") {
       const id = Number(event.queryStringParameters?.id);
       if (!id) return err(400, "id query param is required");
-      await sql`delete from products where id=${id}`;
-      return ok({ deleted: true });
+
+      await sql/*sql*/`
+        update products
+        set active = false
+        where id=${id}
+      `;
+      return ok({ deleted: true, soft: true });
+    }
+
+    // PATCH: explicitly toggle active flag
+    if (event.httpMethod === "PATCH") {
+      const body = JSON.parse(event.body || "{}");
+      if (!body.id || typeof body.active !== "boolean") {
+        return err(400, "id and active required");
+      }
+      const [row] = await sql/*sql*/`
+        update products
+        set active=${body.active}
+        where id=${body.id}
+        returning id, name, price, active
+      `;
+      return ok(row);
     }
 
     return err(405, "Method Not Allowed");
@@ -75,4 +121,3 @@ export const handler = async (event) => {
     return err(500, { error: e.message || "Server error" });
   }
 };
-
