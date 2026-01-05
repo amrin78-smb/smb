@@ -10,7 +10,7 @@ import Login from "./components/Login";
 /* ---------- Shared UI bits ---------- */
 const Button = ({ children, className = "", ...props }) => (
   <button
-    className={`px-3 py-2 rounded-xl border shadow-sm hover:shadow transition text-sm bg-gray-50 ${className}`}
+    className={`px-3 py-2 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition text-sm bg-white text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-200 ${className}`}
     {...props}
   >
     {children}
@@ -59,9 +59,9 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
       {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-10">
+      <header className="bg-white/80 backdrop-blur border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-3 sm:px-5 py-2.5 sm:py-3">
           {/* Row: title + right controls */}
           <div className="flex items-center justify-between gap-3">
@@ -76,7 +76,7 @@ export default function App() {
               />
               <button
                 onClick={handleLogout}
-                className="px-2 py-1 text-xs sm:text-sm rounded-lg border bg-gray-50 hover:shadow"
+                className="px-2 py-1 text-xs sm:text-sm rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:shadow focus:outline-none focus:ring-2 focus:ring-indigo-200"
                 title="Logout"
               >
                 Logout
@@ -89,7 +89,7 @@ export default function App() {
             {Object.values(Tabs).map((t) => (
               <Button
                 key={t}
-                className={`shrink-0 ${tab === t ? "bg-blue-100" : ""}`}
+                className={`shrink-0 ${tab === t ? "bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700" : ""}`}
                 onClick={() => setTab(t)}
               >
                 {t}
