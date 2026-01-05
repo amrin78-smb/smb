@@ -7,10 +7,17 @@
 
     <!-- Tailwind Play CDN (for styling) -->
     <script src="https://cdn.tailwindcss.com"></script>
+    
     <script>
       tailwind.config = {
         theme: {
           extend: {
+            colors: {
+              primary: '#6366f1',
+              secondary: '#14b8a6',
+              surface: '#f8fafc',
+              muted: '#64748b'
+            },
             borderRadius: {
               '2xl': '1rem'
             }
@@ -18,8 +25,9 @@
         }
       }
     </script>
+
   </head>
-  <body class="bg-gray-100">
+  <body class="bg-surface">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
