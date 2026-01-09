@@ -38,6 +38,15 @@ export const handler = async (event) => {
         body: "",
       };
     }
+
+
+// Simple auth guard: require x-smb-user header (set by frontend after login)
+const _h = Object.fromEntries(
+  Object.entries(event.headers || {}).map(([k, v]) => [String(k).toLowerCase(), v])
+);
+if (!_h["x-smb-user"]) {
+  return err(401, "Unauthorized");
+}
     if (event.httpMethod !== "POST") return err(405, "Method Not Allowed");
 
     const body = parseBody(event);
