@@ -39,15 +39,6 @@ export const handler = async (event) => {
       };
     }
 
-
-// Simple auth guard: require x-smb-user header (set by frontend after login)
-const _h = Object.fromEntries(
-  Object.entries(event.headers || {}).map(([k, v]) => [String(k).toLowerCase(), v])
-);
-if (!_h["x-smb-user"]) {
-  return err(401, "Unauthorized");
-}
-
     const { httpMethod, queryStringParameters } = event;
 
     // -------- GET: months list / days in a month / orders for a date / recent --------
