@@ -4,7 +4,10 @@ import {
   listMonths, listDaysInMonth, listOrdersByDate,
   createOrMergeOrder, updateOrderAndItems, deleteOrder as apiDeleteOrder
 } from "../api";
-import { todayStr, formatTHB, useFuzzy, formatDateDMY } from "../utils/format";const Section = ({ title, right, children }) => (
+import { todayStr, formatTHB, useFuzzy, formatDateDMY } from "../utils/format";
+import { generateInvoicePDF } from "../utils/invoice";
+
+const Section = ({ title, right, children }) => (
   <div className="w-full max-w-6xl mx-auto my-4 sm:my-6 p-4 sm:p-5 rounded-2xl shadow border bg-white">
     <div className="flex items-center justify-between gap-2 mb-3 sm:mb-4">
       <h2 className="text-lg sm:text-xl font-semibold">{title}</h2>
@@ -218,48 +221,14 @@ export default function Orders() {
     await apiDeleteOrder(o.id);
     setDayOrders(await listOrdersByDate(selectedDay));
   }
-
-
   async function downloadInvoice(o) {
-  try {
-    const cust = customersMap[o.customerId] || null;
-
-    const headers = { "content-type": "application/json" };
-    // If your API is protected, we forward the logged-in user (safe to include even if unused).
-    const u = localStorage.getItem("smb_user");
-    if (u) headers["x-smb-user"] = u;
-
-    const res = await fetch("/.netlify/functions/invoice-xlsx", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ order: o, customer: cust }),
-    });
-
-    if (!res.ok) {
-      const msg = await res.text().catch(() => "");
-      throw new Error(msg || "Failed to generate invoice");
+    try {
+      const cust = customersMap[o.customerId];
+      await generateInvoicePDF(o, cust);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to generate invoice: " + (e?.message || String(e)));
     }
-
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-
-    const safeDate = (o.date || "").replaceAll("-", "");
-    const filename = `Invoice_${safeDate || "order"}_${o.id}.xlsx`;
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-
-    URL.revokeObjectURL(url);
-  } catch (e) {
-    console.error(e);
-    alert("Failed to generate invoice Excel: " + (e?.message || String(e)));
-  }
-}
-
   }
 
   // Format YYYY-MM -> "September 2025"
