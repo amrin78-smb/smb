@@ -173,7 +173,7 @@ export const handler = async (event) => {
     if (!trySetNamed(wb, "CustomerName", custName)) ws.getCell("A8").value = custName;
     if (!trySetNamed(wb, "CustomerAddress", custAddr)) ws.getCell("A9").value = custAddr;
     if (custPhone) {
-      if (!trySetNamed(wb, "CustomerPhone", custPhone)) ws.getCell("A12").value = custPhone;
+      if (!trySetNamed(wb, "CustomerPhone", custPhone)) ws.getCell("A11").value = custPhone;
     }
 
     if (order?.notes) trySetNamed(wb, "Notes", order.notes);
