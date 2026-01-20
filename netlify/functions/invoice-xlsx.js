@@ -1,19 +1,16 @@
 // netlify/functions/invoice-xlsx.js
 // Generates an XLSX invoice from an Excel template.
 //
-// It prefers defined names (Workbook or Worksheet scope). If some names are missing,
-// it falls back to default cells on sheet "Invoice Template":
-// - InvoiceNo: H7
-// - InvoiceDate: H8
-// - CustomerAddress (name+address): A8
-// - CustomerPhone: A12
-// - Item row: row 16, columns A (desc), F (qty), G (unit), H (line total)
-// - Subtotal: H31
-// - DeliveryFee: H32
-// - GrandTotal: H34
+// Fixes in this version:
+// 1) Prevent Excel "repair" warnings by NOT duplicating/inserting rows (duplicateRow can corrupt templates with merges).
+//    Instead it fills existing item lines starting at row 16.
+// 2) Customer Name and Address are written to separate cells (A8 and A9 fallback).
+// 3) Robust date parsing: supports YYYY-MM-DD and DD-MM-YYYY; otherwise writes raw string.
+//
+// Template: templates/Invoice_Template.xlsx
 //
 // Request body:
-// { order: { id, date, items, deliveryFee, notes }, customer: { name, address, phone } }
+// { order: { id, date, items: [{name,qty,price}, ...], deliveryFee, notes }, customer: { name, address, phone } }
 
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -29,22 +26,17 @@ function json(statusCode, obj) {
   return {
     statusCode,
     headers: { ...corsHeaders, "content-type": "application/json" },
-    body: JSON.stringify(obj),
+    body: JSON.stringify(obj, null, 2),
   };
 }
 
 function parseRange(rangeStr) {
-  const m = rangeStr.match(/^(?:'([^']+)'|([^!]+))!(.+)$/);
+  const m = String(rangeStr).match(/^(?:'([^']+)'|([^!]+))!(.+)$/);
   if (!m) return null;
   return { sheet: m[1] || m[2], addr: m[3] };
 }
 
-const stripDollar = (s) => s.replaceAll("$", "");
-
-function extractRowNumber(cellAddress) {
-  const m = cellAddress.match(/\d+$/);
-  return m ? parseInt(m[0], 10) : null;
-}
+const stripDollar = (s) => String(s).replaceAll("$", "");
 
 function sheetNameByLocalId(workbook, localSheetId) {
   const idx = Number(localSheetId);
@@ -54,11 +46,11 @@ function sheetNameByLocalId(workbook, localSheetId) {
 }
 
 function getFirstRangeAnyScope(workbook, name) {
-  // 1) workbook-scoped
-  const ranges = workbook.definedNames.getRanges(name);
-  if (ranges && ranges.length) return ranges[0];
+  try {
+    const ranges = workbook.definedNames.getRanges(name);
+    if (ranges && ranges.length) return ranges[0];
+  } catch {}
 
-  // 2) worksheet-scoped (model)
   const model = workbook.definedNames?.model;
   const defs = model?.definedName;
   if (!defs) return null;
@@ -78,10 +70,66 @@ function getFirstRangeAnyScope(workbook, name) {
   return `${sheetPart}!${ref}`;
 }
 
+function trySetNamed(wb, name, value) {
+  const r = getFirstRangeAnyScope(wb, name);
+  if (!r) return false;
+  const p = parseRange(r);
+  if (!p) return false;
+  const w = wb.getWorksheet(p.sheet);
+  if (!w) return false;
+
+  if (p.addr.includes(":") && !p.addr.match(/\$[A-Z]+\$\d+/)) return false;
+
+  const cell = w.getCell(stripDollar(p.addr));
+  if (cell.value && typeof cell.value === "object" && cell.value.formula) return true;
+  cell.value = value;
+  return true;
+}
+
+function parseOrderDate(dateStr) {
+  const s = String(dateStr || "").trim();
+  if (!s) return null;
+
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00`);
+
+  m = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (m) return new Date(`${m[3]}-${m[2]}-${m[1]}T00:00:00`);
+
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return d;
+
+  return null;
+}
+
+async function loadTemplateWorkbook() {
+  const templatePath = path.resolve(process.cwd(), "templates", "Invoice_Template.xlsx");
+  const fileBuf = await fs.readFile(templatePath);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(fileBuf);
+  return { wb, templatePath, size: fileBuf.length };
+}
+
 export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers: corsHeaders, body: "" };
   }
+
+  // GET = diagnostics (optional)
+  if (event.httpMethod === "GET") {
+    try {
+      const { wb, templatePath, size } = await loadTemplateWorkbook();
+      let names = [];
+      try { names = wb.definedNames.getNames(); } catch {}
+      const required = ["CustomerName","CustomerAddress","CustomerPhone","InvoiceNo","InvoiceDate","ItemDesc","ItemQty","ItemUnitPrice","ItemLineTotal","SubTotal","DeliveryFee","GrandTotal"];
+      const resolved = {};
+      for (const r of required) resolved[r] = getFirstRangeAnyScope(wb, r);
+      return json(200, { ok: true, templatePath, templateBytes: size, worksheetNames: wb.worksheets.map(w=>w.name), definedNamesKeys: names, requiredResolved: resolved });
+    } catch (e) {
+      return json(500, { ok: false, error: e?.message || String(e) });
+    }
+  }
+
   if (event.httpMethod !== "POST") {
     return json(405, { ok: false, error: "Method not allowed" });
   }
@@ -101,72 +149,40 @@ export const handler = async (event) => {
   }
 
   try {
-    const templatePath = path.resolve(process.cwd(), "templates", "Invoice_Template.xlsx");
-    const fileBuf = await fs.readFile(templatePath);
-
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(fileBuf);
-
-    // Worksheet
-    const ws =
-      wb.getWorksheet("Invoice Template") ||
-      wb.getWorksheet("Invoice_Template") ||
-      wb.worksheets[0];
-
+    const { wb } = await loadTemplateWorkbook();
+    const ws = wb.getWorksheet("Invoice Template") || wb.getWorksheet("Invoice_Template") || wb.worksheets[0];
     if (!ws) return json(500, { ok: false, error: "Worksheet not found in template" });
 
-    // Helper: set a named cell if it exists; returns true/false
-    const trySetNamed = (name, value) => {
-      const r = getFirstRangeAnyScope(wb, name);
-      if (!r) return false;
-      const p = parseRange(r);
-      if (!p) return false;
-      const w = wb.getWorksheet(p.sheet);
-      if (!w) return false;
-
-      // Ignore row ranges like "$16:$16"
-      if (p.addr.includes(":") && !p.addr.match(/\$[A-Z]+\$\d+/)) return false;
-
-      const cell = w.getCell(stripDollar(p.addr));
-      if (cell.value && typeof cell.value === "object" && cell.value.formula) return true; // keep formulas
-      cell.value = value;
-      return true;
-    };
-
-    // Header (prefer names; fallback to fixed cells)
+    // Invoice No
     const invoiceNo = `INV-${order.id}`;
-    if (!trySetNamed("InvoiceNo", invoiceNo)) ws.getCell("H7").value = invoiceNo;
+    if (!trySetNamed(wb, "InvoiceNo", invoiceNo)) ws.getCell("H7").value = invoiceNo;
 
-    const invDate = new Date(`${order.date}T00:00:00`);
-    if (!trySetNamed("InvoiceDate", invDate)) ws.getCell("H8").value = invDate;
-
-    const custName = customer?.name || "";
-    const custAddr = customer?.address || "";
-    const custPhone = customer?.phone || "";
-
-    // If template has CustomerName / CustomerAddress separately, use them.
-    // Otherwise write "Name\nAddress" into CustomerAddress (A8) and leave phone in A12.
-    const hasNameCell = trySetNamed("CustomerName", custName);
-    const hasAddrCell = trySetNamed("CustomerAddress", custAddr);
-
-    if (!hasNameCell && !hasAddrCell) {
-      const combined = [custName, custAddr].filter(Boolean).join("\n");
-      if (!trySetNamed("CustomerAddress", combined)) ws.getCell("A8").value = combined;
-    } else if (!hasNameCell && hasAddrCell && custName) {
-      // Address exists but name cell missing: prepend name into address cell
-      // (avoid overwriting formula cells handled above)
-      const combined = [custName, custAddr].filter(Boolean).join("\n");
-      trySetNamed("CustomerAddress", combined);
+    // Date
+    const d = parseOrderDate(order.date);
+    if (d) {
+      if (!trySetNamed(wb, "InvoiceDate", d)) ws.getCell("H8").value = d;
+    } else {
+      if (!trySetNamed(wb, "InvoiceDate", String(order.date))) ws.getCell("H8").value = String(order.date);
     }
 
-    if (!trySetNamed("CustomerPhone", custPhone) && custPhone) ws.getCell("A12").value = custPhone;
+    // Customer (separate cells)
+    const custName = String(customer?.name || "");
+    const custAddr = String(customer?.address || "");
+    const custPhone = String(customer?.phone || "");
 
-    if (order?.notes) trySetNamed("Notes", order.notes);
+    if (!trySetNamed(wb, "CustomerName", custName)) ws.getCell("A8").value = custName;
+    if (!trySetNamed(wb, "CustomerAddress", custAddr)) ws.getCell("A9").value = custAddr;
+    if (custPhone) {
+      if (!trySetNamed(wb, "CustomerPhone", custPhone)) ws.getCell("A12").value = custPhone;
+    }
 
+    if (order?.notes) trySetNamed(wb, "Notes", order.notes);
+
+    // Delivery fee
     const deliveryFee = Number(order.deliveryFee || 0);
-    if (!trySetNamed("DeliveryFee", deliveryFee)) ws.getCell("H32").value = deliveryFee;
+    if (!trySetNamed(wb, "DeliveryFee", deliveryFee)) ws.getCell("H32").value = deliveryFee;
 
-    // Items: try named cells; otherwise fallback to A16/F16/G16/H16
+    // Item coordinates (prefer names)
     const itemDescRange = getFirstRangeAnyScope(wb, "ItemDesc");
     const itemQtyRange = getFirstRangeAnyScope(wb, "ItemQty");
     const itemUnitRange = getFirstRangeAnyScope(wb, "ItemUnitPrice");
@@ -184,15 +200,15 @@ export const handler = async (event) => {
       const pu = parseRange(itemUnitRange);
       const pl = parseRange(itemLineRange);
 
-      const w = wb.getWorksheet(pd.sheet) || ws;
+      const w = wb.getWorksheet(pd?.sheet) || ws;
 
-      const descAddr = stripDollar(pd.addr);
-      const qtyAddr = stripDollar(pq.addr);
-      const unitAddr = stripDollar(pu.addr);
-      const lineAddr = stripDollar(pl.addr);
+      const descAddr = stripDollar(pd?.addr);
+      const qtyAddr = stripDollar(pq?.addr);
+      const unitAddr = stripDollar(pu?.addr);
+      const lineAddr = stripDollar(pl?.addr);
 
-      const resolvedRow = extractRowNumber(descAddr);
-      if (resolvedRow) baseRow = resolvedRow;
+      const rowMatch = String(descAddr).match(/\d+$/);
+      if (rowMatch) baseRow = parseInt(rowMatch[0], 10);
 
       descCol = w.getCell(descAddr).col;
       qtyCol = w.getCell(qtyAddr).col;
@@ -206,30 +222,27 @@ export const handler = async (event) => {
       unit: Number(it.price ?? it.unitPrice ?? 0),
     }));
 
-    // Duplicate base row for extra items
-    const extra = Math.max(0, items.length - 1);
-    for (let i = 0; i < extra; i++) {
-      ws.duplicateRow(baseRow, 1, true);
-    }
+    const maxRows = 30;
+    const maxWrite = Math.min(items.length, maxRows - baseRow + 1);
 
-    // Fill values
-    items.forEach((it, idx) => {
-      const r = baseRow + idx;
-      ws.getCell(r, descCol).value = it.desc;
-      ws.getCell(r, qtyCol).value = it.qty;
-      ws.getCell(r, unitCol).value = it.unit;
+    for (let i = 0; i < maxWrite; i++) {
+      const r = baseRow + i;
+      ws.getCell(r, descCol).value = items[i].desc;
+      ws.getCell(r, qtyCol).value = items[i].qty;
+      ws.getCell(r, unitCol).value = items[i].unit;
 
       const lineCell = ws.getCell(r, lineCol);
-      if (!lineCell.value) lineCell.value = it.qty * it.unit;
-    });
+      if (!(lineCell.value && typeof lineCell.value === "object" && lineCell.value.formula)) {
+        lineCell.value = items[i].qty * items[i].unit;
+      }
+    }
 
-    // Totals fallback (template formulas preferred)
     const subTotal = items.reduce((s, it) => s + it.qty * it.unit, 0);
-    if (!trySetNamed("SubTotal", subTotal) && !trySetNamed("Subtotal", subTotal)) ws.getCell("H31").value = subTotal;
-    if (!trySetNamed("GrandTotal", subTotal + deliveryFee)) ws.getCell("H34").value = subTotal + deliveryFee;
+    if (!trySetNamed(wb, "SubTotal", subTotal) && !trySetNamed(wb, "Subtotal", subTotal)) ws.getCell("H31").value = subTotal;
+    if (!trySetNamed(wb, "GrandTotal", subTotal + deliveryFee)) ws.getCell("H34").value = subTotal + deliveryFee;
 
     const outBuf = await wb.xlsx.writeBuffer();
-    const filename = `Invoice_${order.date.replaceAll("-", "")}_${order.id}.xlsx`;
+    const filename = `Invoice_${String(order.date).replaceAll("-", "")}_${order.id}.xlsx`;
 
     return {
       statusCode: 200,
