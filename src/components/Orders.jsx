@@ -503,7 +503,7 @@ async function downloadInvoice(o) {
                         <td className="p-2 flex gap-2">
                           <Button onClick={() => openEdit(o)}>View / Edit</Button>
                           <Button className="bg-red-100" onClick={() => deleteOrder(o)}>Delete</Button>
-                          <Button onClick={() => downloadInvoice(o)}>Invoice PDF</Button>
+                          <Button onClick={() => downloadInvoice(o)}>Invoice</Button>
                         </td>
                       </tr>
 
@@ -563,7 +563,7 @@ async function downloadInvoice(o) {
                   <div className="mt-2 flex flex-wrap gap-2">
                     <Button onClick={() => openEdit(o)}>View / Edit</Button>
                     <Button className="bg-red-100" onClick={() => deleteOrder(o)}>Delete</Button>
-                    <Button onClick={() => downloadInvoice(o)}>Invoice PDF</Button>
+                    <Button onClick={() => downloadInvoice(o)}>Invoice</Button>
                   </div>
 
                   {(o.items || []).length > 0 && (
