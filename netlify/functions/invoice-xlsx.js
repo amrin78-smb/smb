@@ -1,9 +1,20 @@
 // netlify/functions/invoice-xlsx.js
-// Hybrid XLSX invoice generator:
-// - CustomerName / CustomerAddress / CustomerPhone are REQUIRED named cells.
-// - InvoiceNo / InvoiceDate use named cells if present, otherwise fallback to H7/H8.
-// - Filename: SMB_<CustomerName>_<YYYYMMDD>.xlsx
-// - No row insertion/duplication.
+// XLSX invoice generator (hardcoded customer cells per request).
+//
+// Customer placement:
+// - Name    -> A9
+// - Address -> A10
+// - Phone   -> A11
+//
+// Filename:
+//   SMB_<CustomerName>_<YYYYMMDD>.xlsx
+//
+// Notes:
+// - No row insertion/duplication (Excel-safe).
+// - Invoice number/date: writes to H7/H8 (and will also set named cells if they exist).
+//
+// Request body:
+// { order: { id, date, items: [{name,qty,price}, ...], deliveryFee, notes }, customer: { name, address, phone } }
 
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -73,11 +84,6 @@ function setNamedIfExists(wb, name, value) {
   return true;
 }
 
-function setNamedRequired(wb, name, value) {
-  const ok = setNamedIfExists(wb, name, value);
-  if (!ok) throw new Error(`Required named cell not found: ${name}`);
-}
-
 function parseOrderDate(dateStr) {
   const s = String(dateStr || "").trim();
   if (!s) return null;
@@ -133,17 +139,26 @@ export const handler = async (event) => {
     const d = parseOrderDate(order.date);
     if (!d) throw new Error("Unable to parse order date");
 
-    // Customer fields required by name
-    setNamedRequired(wb, "CustomerName", String(customer.name || ""));
-    setNamedRequired(wb, "CustomerAddress", String(customer.address || ""));
-    setNamedRequired(wb, "CustomerPhone", String(customer.phone || ""));
+    // Hardcoded customer placement (per your request)
+    const custName = String(customer.name || "");
+    const custAddr = String(customer.address || "");
+    const custPhone = String(customer.phone || "");
 
-    // Invoice No / Date optional by name, fallback to H7/H8
+    ws.getCell("A9").value = custName;
+    ws.getCell("A10").value = custAddr;
+    ws.getCell("A11").value = custPhone;
+
+    // Also set named cells if they happen to exist (harmless)
+    setNamedIfExists(wb, "CustomerName", custName);
+    setNamedIfExists(wb, "CustomerAddress", custAddr);
+    setNamedIfExists(wb, "CustomerPhone", custPhone);
+
+    // Invoice no/date (fallback to H7/H8)
     const invoiceNo = `INV-${order.id}`;
     if (!setNamedIfExists(wb, "InvoiceNo", invoiceNo)) ws.getCell("H7").value = invoiceNo;
     if (!setNamedIfExists(wb, "InvoiceDate", d)) ws.getCell("H8").value = d;
 
-    // Items
+    // Items (fixed rows)
     const baseRow = 16;
     const descCol = ws.getCell("A16").col;
     const qtyCol = ws.getCell("F16").col;
@@ -168,10 +183,10 @@ export const handler = async (event) => {
       }
     }
 
-    // Filename
-    const safeName = String(customer.name || "Customer")
-      .replace(/[^\w\d]+/g, "_")
-      .replace(/^_+|_+$/g, "");
+    // Filename: SMB_<CustomerName>_<YYYYMMDD>.xlsx
+    const safeName = custName
+      ? custName.replace(/[^\w\d]+/g, "_").replace(/^_+|_+$/g, "")
+      : "Customer";
     const dateStr = d.toISOString().slice(0, 10).replaceAll("-", "");
     const filename = `SMB_${safeName}_${dateStr}.xlsx`;
 
