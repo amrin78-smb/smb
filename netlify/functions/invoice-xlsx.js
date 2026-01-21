@@ -183,6 +183,18 @@ export const handler = async (event) => {
       }
     }
 
+    // Delivery fee (template expects H32 / named range "DeliveryFee")
+    // Accept both deliveryFee (camelCase) and delivery_fee (snake_case) from payload.
+    const deliveryFeeRaw =
+      order.deliveryFee ?? order.delivery_fee ?? order.delivery ?? 0;
+    const deliveryFee = Number(deliveryFeeRaw);
+    const deliveryFeeValue = Number.isFinite(deliveryFee) ? deliveryFee : 0;
+
+    // Prefer named range when present; also set H32 as a safe fallback.
+    setNamedIfExists(wb, "DeliveryFee", deliveryFeeValue);
+    ws.getCell("H32").value = deliveryFeeValue;
+
+
     // Filename: SMB_<CustomerName>_<YYYYMMDD>.xlsx
     const safeName = custName
       ? custName.replace(/[^\w\d]+/g, "_").replace(/^_+|_+$/g, "")
