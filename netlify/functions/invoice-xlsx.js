@@ -1,22 +1,17 @@
 // netlify/functions/invoice-xlsx.js
-// XLSX invoice generator (named-cells required for customer fields).
-//
-// This version adds a DEBUG GET endpoint so you can verify what Netlify is actually reading.
-// - GET  /.netlify/functions/invoice-xlsx  -> returns template size, SHA256, and defined names detected by ExcelJS
-// - POST /.netlify/functions/invoice-xlsx  -> generates invoice as before
-//
-// Required defined names:
-// InvoiceNo, InvoiceDate, CustomerName, CustomerAddress, CustomerPhone
-// (others can remain formula-driven in the template)
+// Hybrid XLSX invoice generator:
+// - CustomerName / CustomerAddress / CustomerPhone are REQUIRED named cells.
+// - InvoiceNo / InvoiceDate use named cells if present, otherwise fallback to H7/H8.
+// - Filename: SMB_<CustomerName>_<YYYYMMDD>.xlsx
+// - No row insertion/duplication.
 
 import fs from "node:fs/promises";
 import path from "node:path";
 import ExcelJS from "exceljs";
-import crypto from "node:crypto";
 
 const corsHeaders = {
   "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-methods": "POST, OPTIONS",
   "access-control-allow-headers": "content-type, x-smb-user",
 };
 
@@ -24,7 +19,7 @@ function json(statusCode, obj) {
   return {
     statusCode,
     headers: { ...corsHeaders, "content-type": "application/json" },
-    body: JSON.stringify(obj, null, 2),
+    body: JSON.stringify(obj),
   };
 }
 
@@ -60,24 +55,27 @@ function getFirstRangeAnyScope(workbook, name) {
 
   if (String(ref).includes("!")) return String(ref);
 
-  const sheet = hit.localSheetId !== undefined
-    ? sheetNameByLocalId(workbook, hit.localSheetId)
-    : null;
-
+  const sheet = hit.localSheetId !== undefined ? sheetNameByLocalId(workbook, hit.localSheetId) : null;
   if (!sheet) return null;
 
   const sheetPart = sheet.includes(" ") ? `'${sheet}'` : sheet;
   return `${sheetPart}!${ref}`;
 }
 
-function setNamedRequired(wb, name, value) {
+function setNamedIfExists(wb, name, value) {
   const r = getFirstRangeAnyScope(wb, name);
-  if (!r) throw new Error(`Required named cell not found: ${name}`);
+  if (!r) return false;
   const p = parseRange(r);
   const w = wb.getWorksheet(p.sheet);
   const cell = w.getCell(stripDollar(p.addr));
-  if (cell.value && typeof cell.value === "object" && cell.value.formula) return;
+  if (cell.value && typeof cell.value === "object" && cell.value.formula) return true;
   cell.value = value;
+  return true;
+}
+
+function setNamedRequired(wb, name, value) {
+  const ok = setNamedIfExists(wb, name, value);
+  if (!ok) throw new Error(`Required named cell not found: ${name}`);
 }
 
 function parseOrderDate(dateStr) {
@@ -96,43 +94,10 @@ function parseOrderDate(dateStr) {
   return null;
 }
 
-async function loadTemplate() {
-  const templatePath = path.resolve(process.cwd(), "templates", "Invoice_Template.xlsx");
-  const buf = await fs.readFile(templatePath);
-  const sha256 = crypto.createHash("sha256").update(buf).digest("hex");
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buf);
-  return { wb, templatePath, size: buf.length, sha256 };
-}
-
 export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers: corsHeaders, body: "" };
   }
-
-  if (event.httpMethod === "GET") {
-    try {
-      const { wb, templatePath, size, sha256 } = await loadTemplate();
-      let names = [];
-      try { names = wb.definedNames.getNames(); } catch {}
-      const required = ["InvoiceNo","InvoiceDate","CustomerName","CustomerAddress","CustomerPhone","ItemDesc","ItemQty","ItemUnitPrice","ItemLineTotal","SubTotal","DeliveryFee","GrandTotal"];
-      const resolved = {};
-      for (const r of required) resolved[r] = getFirstRangeAnyScope(wb, r);
-
-      return json(200, {
-        ok: true,
-        templatePath,
-        templateBytes: size,
-        templateSha256: sha256,
-        worksheetNames: wb.worksheets.map((w) => w.name),
-        definedNamesKeys: names,
-        requiredResolved: resolved,
-      });
-    } catch (e) {
-      return json(500, { ok: false, error: e?.message || String(e) });
-    }
-  }
-
   if (event.httpMethod !== "POST") {
     return json(405, { ok: false, error: "Method not allowed" });
   }
@@ -152,25 +117,33 @@ export const handler = async (event) => {
   }
 
   try {
-    const { wb } = await loadTemplate();
+    const templatePath = path.resolve(process.cwd(), "templates", "Invoice_Template.xlsx");
+    const fileBuf = await fs.readFile(templatePath);
 
-    // Header
-    setNamedRequired(wb, "InvoiceNo", `INV-${order.id}`);
-    const d = parseOrderDate(order.date);
-    if (!d) throw new Error("Unable to parse order date");
-    setNamedRequired(wb, "InvoiceDate", d);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(fileBuf);
 
-    // Customer fields (named cells only)
-    setNamedRequired(wb, "CustomerName", String(customer.name || ""));
-    setNamedRequired(wb, "CustomerAddress", String(customer.address || ""));
-    setNamedRequired(wb, "CustomerPhone", String(customer.phone || ""));
-
-    // Items (fixed lines – template should have enough rows)
     const ws =
       wb.getWorksheet("Invoice Template") ||
       wb.getWorksheet("Invoice_Template") ||
       wb.worksheets[0];
 
+    if (!ws) throw new Error("Worksheet not found");
+
+    const d = parseOrderDate(order.date);
+    if (!d) throw new Error("Unable to parse order date");
+
+    // Customer fields required by name
+    setNamedRequired(wb, "CustomerName", String(customer.name || ""));
+    setNamedRequired(wb, "CustomerAddress", String(customer.address || ""));
+    setNamedRequired(wb, "CustomerPhone", String(customer.phone || ""));
+
+    // Invoice No / Date optional by name, fallback to H7/H8
+    const invoiceNo = `INV-${order.id}`;
+    if (!setNamedIfExists(wb, "InvoiceNo", invoiceNo)) ws.getCell("H7").value = invoiceNo;
+    if (!setNamedIfExists(wb, "InvoiceDate", d)) ws.getCell("H8").value = d;
+
+    // Items
     const baseRow = 16;
     const descCol = ws.getCell("A16").col;
     const qtyCol = ws.getCell("F16").col;
@@ -215,6 +188,6 @@ export const handler = async (event) => {
       body: Buffer.from(outBuf).toString("base64"),
     };
   } catch (e) {
-    return json(500, { ok: false, error: e?.message || String(e) });
+    return json(500, { ok: false, error: e.message || String(e) });
   }
 };
