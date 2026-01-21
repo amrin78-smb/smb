@@ -1,17 +1,22 @@
 // netlify/functions/invoice-xlsx.js
-// Invoice XLSX generator (finalized)
+// XLSX invoice generator (named-cells required for customer fields).
 //
-// - Uses ONLY defined names for customer fields (no hardcoded cells)
-// - Filename: SMB_<CustomerName>_<YYYYMMDD>.xlsx
-// - Excel-safe (no row duplication)
+// This version adds a DEBUG GET endpoint so you can verify what Netlify is actually reading.
+// - GET  /.netlify/functions/invoice-xlsx  -> returns template size, SHA256, and defined names detected by ExcelJS
+// - POST /.netlify/functions/invoice-xlsx  -> generates invoice as before
+//
+// Required defined names:
+// InvoiceNo, InvoiceDate, CustomerName, CustomerAddress, CustomerPhone
+// (others can remain formula-driven in the template)
 
 import fs from "node:fs/promises";
 import path from "node:path";
 import ExcelJS from "exceljs";
+import crypto from "node:crypto";
 
 const corsHeaders = {
   "access-control-allow-origin": "*",
-  "access-control-allow-methods": "POST, OPTIONS",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
   "access-control-allow-headers": "content-type, x-smb-user",
 };
 
@@ -19,7 +24,7 @@ function json(statusCode, obj) {
   return {
     statusCode,
     headers: { ...corsHeaders, "content-type": "application/json" },
-    body: JSON.stringify(obj),
+    body: JSON.stringify(obj, null, 2),
   };
 }
 
@@ -91,10 +96,43 @@ function parseOrderDate(dateStr) {
   return null;
 }
 
+async function loadTemplate() {
+  const templatePath = path.resolve(process.cwd(), "templates", "Invoice_Template.xlsx");
+  const buf = await fs.readFile(templatePath);
+  const sha256 = crypto.createHash("sha256").update(buf).digest("hex");
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf);
+  return { wb, templatePath, size: buf.length, sha256 };
+}
+
 export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers: corsHeaders, body: "" };
   }
+
+  if (event.httpMethod === "GET") {
+    try {
+      const { wb, templatePath, size, sha256 } = await loadTemplate();
+      let names = [];
+      try { names = wb.definedNames.getNames(); } catch {}
+      const required = ["InvoiceNo","InvoiceDate","CustomerName","CustomerAddress","CustomerPhone","ItemDesc","ItemQty","ItemUnitPrice","ItemLineTotal","SubTotal","DeliveryFee","GrandTotal"];
+      const resolved = {};
+      for (const r of required) resolved[r] = getFirstRangeAnyScope(wb, r);
+
+      return json(200, {
+        ok: true,
+        templatePath,
+        templateBytes: size,
+        templateSha256: sha256,
+        worksheetNames: wb.worksheets.map((w) => w.name),
+        definedNamesKeys: names,
+        requiredResolved: resolved,
+      });
+    } catch (e) {
+      return json(500, { ok: false, error: e?.message || String(e) });
+    }
+  }
+
   if (event.httpMethod !== "POST") {
     return json(405, { ok: false, error: "Method not allowed" });
   }
@@ -114,37 +152,30 @@ export const handler = async (event) => {
   }
 
   try {
-    const templatePath = path.resolve(process.cwd(), "templates", "Invoice_Template.xlsx");
-    const fileBuf = await fs.readFile(templatePath);
+    const { wb } = await loadTemplate();
 
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(fileBuf);
+    // Header
+    setNamedRequired(wb, "InvoiceNo", `INV-${order.id}`);
+    const d = parseOrderDate(order.date);
+    if (!d) throw new Error("Unable to parse order date");
+    setNamedRequired(wb, "InvoiceDate", d);
 
+    // Customer fields (named cells only)
+    setNamedRequired(wb, "CustomerName", String(customer.name || ""));
+    setNamedRequired(wb, "CustomerAddress", String(customer.address || ""));
+    setNamedRequired(wb, "CustomerPhone", String(customer.phone || ""));
+
+    // Items (fixed lines – template should have enough rows)
     const ws =
       wb.getWorksheet("Invoice Template") ||
       wb.getWorksheet("Invoice_Template") ||
       wb.worksheets[0];
 
-    if (!ws) throw new Error("Worksheet not found");
-
-    // Invoice header
-    setNamedRequired(wb, "InvoiceNo", `INV-${order.id}`);
-
-    const d = parseOrderDate(order.date);
-    if (!d) throw new Error("Unable to parse order date");
-    setNamedRequired(wb, "InvoiceDate", d);
-
-    // Customer (named cells only)
-    setNamedRequired(wb, "CustomerName", String(customer.name || ""));
-    setNamedRequired(wb, "CustomerAddress", String(customer.address || ""));
-    setNamedRequired(wb, "CustomerPhone", String(customer.phone || ""));
-
-    // Items (fixed rows, no insertion)
-    let baseRow = 16;
-    let descCol = ws.getCell("A16").col;
-    let qtyCol = ws.getCell("F16").col;
-    let unitCol = ws.getCell("G16").col;
-    let lineCol = ws.getCell("H16").col;
+    const baseRow = 16;
+    const descCol = ws.getCell("A16").col;
+    const qtyCol = ws.getCell("F16").col;
+    const unitCol = ws.getCell("G16").col;
+    const lineCol = ws.getCell("H16").col;
 
     const items = order.items.map((it) => ({
       desc: it.name || it.productName || it.product || "",
@@ -184,6 +215,6 @@ export const handler = async (event) => {
       body: Buffer.from(outBuf).toString("base64"),
     };
   } catch (e) {
-    return json(500, { ok: false, error: e.message || String(e) });
+    return json(500, { ok: false, error: e?.message || String(e) });
   }
 };
