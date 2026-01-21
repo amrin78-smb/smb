@@ -241,12 +241,18 @@ async function downloadInvoice(o) {
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
 
-    const safeDate = (o.date || "").replaceAll("-", "");
-    const filename = `Invoice_${safeDate || "order"}_${o.id}.xlsx`;
+    // ✅ USE SERVER-PROVIDED FILENAME
+    const cd = res.headers.get("content-disposition") || "";
+    const match = cd.match(/filename="([^"]+)"/i);
+    const serverFilename = match?.[1];
+
+    // Fallback (should rarely be used)
+    const fallbackDate = (o.date || "").replaceAll("-", "");
+    const fallbackFilename = `SMB_${fallbackDate || "Invoice"}_${o.id}.xlsx`;
 
     const a = document.createElement("a");
     a.href = url;
-    a.download = filename;
+    a.download = serverFilename || fallbackFilename;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -257,6 +263,7 @@ async function downloadInvoice(o) {
     alert("Failed to generate invoice Excel: " + (e?.message || String(e)));
   }
 }
+
 
 
   // Format YYYY-MM -> "September 2025"
