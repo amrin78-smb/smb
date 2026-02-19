@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { login as apiLogin } from "../api";
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState("");
@@ -12,20 +13,12 @@ export default function Login({ onLogin }) {
     setIsSubmitting(true);
 
     try {
-      const res = await fetch("/.netlify/functions/login", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (res.ok && data?.ok) {
-        onLogin(username);
+      const result = await apiLogin(username, password);
+      if (result.ok) {
+        onLogin(result.user);
         return;
       }
-
-      setError(data?.error || "Login failed. Please check your credentials.");
+      setError(result.error || "Login failed. Please check your credentials.");
     } catch (err) {
       setError("Cannot reach server. Please try again.");
     } finally {
