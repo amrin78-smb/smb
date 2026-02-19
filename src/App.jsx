@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Products from "./components/Products";
 import Customers from "./components/Customers";
 import Orders from "./components/Orders";
@@ -6,6 +6,7 @@ import Settings from "./components/Settings";
 import Insights from "./components/Insights";
 import Daily from "./components/Daily";
 import Login from "./components/Login";
+import { getSavedUser, logout as apiLogout } from "./api";
 
 /* ---------- Shared UI bits ---------- */
 const Button = ({ children, className = "", ...props }) => (
@@ -17,40 +18,41 @@ const Button = ({ children, className = "", ...props }) => (
   </button>
 );
 
-/* ---------- Tabs (Dashboard removed) ---------- */
+/* ---------- Tabs ---------- */
 const Tabs = {
-  DAILY: "Daily Orders", // default landing tab
+  DAILY: "Daily Orders",
   ORDERS: "Orders",
   INSIGHTS: "Insights",
   PRODUCTS: "Products",
   CUSTOMERS: "Customers",
   SETTINGS: "Settings",
-  };
+};
 
 /* ---------- App ---------- */
 export default function App() {
-  // Default tab changed to Daily Orders
   const [tab, setTab] = useState(Tabs.DAILY);
 
-  const [user, setUser] = useState(() => {
-    try {
-      return localStorage.getItem("smb_user") || null;
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUser] = useState(() => getSavedUser());
+
+  // Listen for session-expiry events fired by api.js when a 401 is received
+  useEffect(() => {
+    const onExpired = (e) => {
+      setUser(null);
+      if (e.detail === "session_expired") {
+        // Brief alert so the user understands why they were logged out
+        alert("Your session has expired. Please log in again.");
+      }
+    };
+    window.addEventListener("smb:logout", onExpired);
+    return () => window.removeEventListener("smb:logout", onExpired);
+  }, []);
 
   const handleLogin = (username) => {
-    try {
-      localStorage.setItem("smb_user", username || "user");
-    } catch {}
-    setUser(username || "user");
+    setUser(username);
   };
 
   const handleLogout = () => {
-    try {
-      localStorage.removeItem("smb_user");
-    } catch {}
+    apiLogout();
     setUser(null);
   };
 
