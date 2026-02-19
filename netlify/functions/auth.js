@@ -1,5 +1,7 @@
 // netlify/functions/auth.js
 // Lightweight JWT helper (HS256) using the Web Crypto API — no npm deps needed.
+import { webcrypto } from "node:crypto";
+const crypto = webcrypto;
 //
 // Usage in every protected function:
 //
