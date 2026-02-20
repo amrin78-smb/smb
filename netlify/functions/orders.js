@@ -1,5 +1,6 @@
 // netlify/functions/orders.js
 import { neon } from "@neondatabase/serverless";
+import { requireAuth, corsHeaders } from "./auth.js";
 
 const sql = neon(process.env.NETLIFY_DATABASE_URL);
 
@@ -33,11 +34,15 @@ export const handler = async (event) => {
         headers: {
           "access-control-allow-origin": "*",
           "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
-          "access-control-allow-headers": "content-type",
+          "access-control-allow-headers": "content-type,authorization",
         },
         body: "",
       };
     }
+    // Verify JWT on every non-OPTIONS request
+    const authErr = await requireAuth(event);
+    if (authErr) return authErr;
+
 
     const { httpMethod, queryStringParameters } = event;
 

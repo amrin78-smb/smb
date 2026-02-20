@@ -19,6 +19,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import ExcelJS from "exceljs";
+import { requireAuth } from "./auth.js";
 
 const corsHeaders = {
   "access-control-allow-origin": "*",
@@ -102,8 +103,13 @@ function parseOrderDate(dateStr) {
 
 export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
-    return { statusCode: 204, headers: corsHeaders, body: "" };
+    return { statusCode: 204, headers: { ...corsHeaders, "access-control-allow-headers": "content-type,authorization" }, body: "" };
   }
+
+  // Verify JWT on every non-OPTIONS request
+  const authErr = await requireAuth(event);
+  if (authErr) return authErr;
+
   if (event.httpMethod !== "POST") {
     return json(405, { ok: false, error: "Method not allowed" });
   }

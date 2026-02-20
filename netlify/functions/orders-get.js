@@ -1,10 +1,28 @@
 // netlify/functions/orders-get.js
 import { neon } from "@netlify/neon";
+import { requireAuth, corsHeaders } from "./auth.js";
 
 const sql = neon();
 
 export async function handler(event) {
   try {
+    // CORS preflight
+    if (event.httpMethod === "OPTIONS") {
+      return {
+        statusCode: 204,
+        headers: {
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET,OPTIONS",
+          "access-control-allow-headers": "content-type,authorization",
+        },
+        body: "",
+      };
+    }
+
+    // Verify JWT on every non-OPTIONS request
+    const authErr = await requireAuth(event);
+    if (authErr) return authErr;
+
     const id = event.queryStringParameters?.id;
     if (!id) {
       return { statusCode: 400, body: "id required" };
