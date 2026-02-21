@@ -1,13 +1,13 @@
 // src/api.js
 // Thin client for Netlify Functions.
-// Attaches the JWT from sessionStorage to every request as Authorization: Bearer <token>.
+// Attaches the JWT from localStorage to every request as Authorization: Bearer <token>.
 // On 401, fires a custom "smb:logout" event so App.jsx can force the user back to login.
 
 const base = "/.netlify/functions";
 
 function getToken() {
   try {
-    return sessionStorage.getItem("smb_token") || "";
+    return localStorage.getItem("smb_token") || "";
   } catch {
     return "";
   }
@@ -27,8 +27,8 @@ async function request(method, url, data) {
   if (res.status === 401) {
     // Token expired or invalid — clear storage and signal the app to log out
     try {
-      sessionStorage.removeItem("smb_token");
-      sessionStorage.removeItem("smb_user");
+      localStorage.removeItem("smb_token");
+      localStorage.removeItem("smb_user");
     } catch {}
     window.dispatchEvent(new CustomEvent("smb:logout", { detail: "session_expired" }));
     throw new Error("Session expired. Please log in again.");
@@ -53,8 +53,8 @@ export async function login(username, password) {
   const data = await res.json().catch(() => ({}));
   if (res.ok && data.ok) {
     try {
-      sessionStorage.setItem("smb_token", data.token);
-      sessionStorage.setItem("smb_user", data.user);
+      localStorage.setItem("smb_token", data.token);
+      localStorage.setItem("smb_user", data.user);
     } catch {}
   }
   return { ok: res.ok && data.ok, user: data.user, error: data.error };
@@ -62,14 +62,14 @@ export async function login(username, password) {
 
 export function logout() {
   try {
-    sessionStorage.removeItem("smb_token");
-    sessionStorage.removeItem("smb_user");
+    localStorage.removeItem("smb_token");
+    localStorage.removeItem("smb_user");
   } catch {}
 }
 
 export function getSavedUser() {
   try {
-    return sessionStorage.getItem("smb_user") || null;
+    return localStorage.getItem("smb_user") || null;
   } catch {
     return null;
   }
