@@ -39,7 +39,7 @@ async function getKey(secret) {
   );
 }
 
-export async function signToken(payload, secret, expiresInSecs = 60 * 60 * 12) {
+export async function signToken(payload, secret, expiresInSecs = 60 * 60 * 24 * 7) {
   const header = base64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
   const claims = base64url(
     JSON.stringify({ ...payload, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + expiresInSecs })

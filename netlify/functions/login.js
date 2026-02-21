@@ -76,8 +76,8 @@ export const handler = async (event) => {
     };
   }
 
-  // Issue a JWT valid for 12 hours
-  const token = await signToken({ sub: username }, secret, 60 * 60 * 12);
+  // Issue a JWT valid for 7 days
+  const token = await signToken({ sub: username }, secret, 60 * 60 * 24 * 7);
 
   return {
     statusCode: 200,
