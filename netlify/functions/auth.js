@@ -68,7 +68,7 @@ export async function verifyToken(token, secret) {
 
 // ---------- CORS origin helper ----------
 
-const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "*"; // set to your Netlify domain in production
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://smbangkok.netlify.app";
 
 export function corsHeaders(requestOrigin) {
   // If ALLOWED_ORIGIN is *, allow everything (dev mode).
