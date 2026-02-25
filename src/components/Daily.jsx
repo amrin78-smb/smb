@@ -2,6 +2,50 @@ import React, { useEffect, useMemo, useState } from "react";
 import { listOrdersByDate, listCustomers } from "../api";
 import { todayStr, formatTHB, formatDateDMY } from "../utils/format";
 
+/* ---------- Shop payment details (hardcoded) ---------- */
+const SHOP_PROMPTPAY   = "0982841569";
+const SHOP_BANK_NUMBER = "511-1346-714";
+const SHOP_BANK_NAME   = "Krungsri (Bank of Ayudhaya)";
+const SHOP_ACCOUNT     = "Nur Edalin";
+
+/* ---------- Generate customer order summary message ---------- */
+function generateSummary(displayName, rows, deliveryTotal, grand, address, date) {
+  // Format date as "Monday, 23 February 2026"
+  const d = new Date(date + "T00:00:00");
+  const dayName  = d.toLocaleDateString("en-GB", { weekday: "long" });
+  const fullDate = d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+
+  const itemLines = rows
+    .map((r) => `• ${r.name} x${r.qty} — ฿${Number(r.amount).toFixed(0)}`)
+    .join("\n");
+
+  const subtotal     = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
+  const deliveryLine = address
+    ? `Delivery (Grab Express to ${address}): ฿${Number(deliveryTotal).toFixed(0)}`
+    : `Delivery: ฿${Number(deliveryTotal).toFixed(0)}`;
+
+  return [
+    `Hi ${displayName} 👋`,
+    ``,
+    `Here's your order summary for ${dayName}, ${fullDate}:`,
+    ``,
+    itemLines,
+    ``,
+    `Subtotal: ฿${Number(subtotal).toFixed(0)}`,
+    deliveryLine,
+    `─────────────────`,
+    `Grand Total: ฿${Number(grand).toFixed(0)}`,
+    ``,
+    `To confirm your order, please transfer ฿${Number(grand).toFixed(0)} via:`,
+    ``,
+    `PromptPay: ${SHOP_PROMPTPAY}`,
+    `${SHOP_BANK_NAME}: ${SHOP_BANK_NUMBER}`,
+    `Account Name: ${SHOP_ACCOUNT}`,
+    ``,
+    `Please send the transfer receipt once done. Thank you! 🙏`,
+  ].join("\n");
+}
+
 /* ---------- Small UI helpers ---------- */
 const Section = ({ title, right, children }) => (
   <div className="w-full max-w-6xl mx-auto my-4 sm:my-6 p-4 sm:p-5 rounded-2xl shadow border bg-white">
@@ -54,6 +98,7 @@ export default function Daily() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [customers, setCustomers] = useState([]);
+  const [copiedId, setCopiedId] = useState(null); // tracks which customer was just copied
 
   async function load() {
     setLoading(true);
@@ -173,6 +218,38 @@ export default function Daily() {
                 <div className="text-sm text-gray-700 mb-3">
                   <div><span className="font-medium">Phone:</span> {c?.phone || "—"}</div>
                   <div><span className="font-medium">Address:</span> {c?.address || "—"}</div>
+                </div>
+                {/* Copy Summary button */}
+                <div className="mb-3">
+                  <Button
+                    className={copiedId === customerId ? "bg-green-100 border-green-300 text-green-700" : ""}
+                    onClick={() => {
+                      const msg = generateSummary(
+                        displayName,
+                        rows,
+                        deliveryTotal,
+                        grand,
+                        c?.address || "",
+                        date
+                      );
+                      navigator.clipboard.writeText(msg).then(() => {
+                        setCopiedId(customerId);
+                        setTimeout(() => setCopiedId(null), 2500);
+                      }).catch(() => {
+                        // Fallback for browsers that block clipboard
+                        const ta = document.createElement("textarea");
+                        ta.value = msg;
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand("copy");
+                        ta.remove();
+                        setCopiedId(customerId);
+                        setTimeout(() => setCopiedId(null), 2500);
+                      });
+                    }}
+                  >
+                    {copiedId === customerId ? "✓ Copied!" : "📋 Copy Summary"}
+                  </Button>
                 </div>
                 <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0">
                   <table className="min-w-full text-sm">
