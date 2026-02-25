@@ -27,9 +27,10 @@ export default function Products() {
   const [form, setForm] = useState({ name: "", price: "" });
   const [editId, setEditId] = useState(null);
   const [editDraft, setEditDraft] = useState({ name: "", price: 0 });
+  const [error, setError] = useState(null);
 
-  const refresh = async () => setList(await listProducts());
-  useEffect(() => { refresh().catch(console.error); }, []);
+  const refresh = async () => { setError(null); setList(await listProducts()); };
+  useEffect(() => { refresh().catch(e => setError(e.message)); }, []);
   const filtered = useFuzzy(list, ["name"], q);
 
   async function add() {
@@ -43,6 +44,7 @@ export default function Products() {
 
   return (
     <Section title="Products" right={<Input placeholder="Search..." value={q} onChange={e => setQ(e.target.value)} className="w-[180px] sm:w-[240px]" />}>
+      {error && <div className="mb-3 px-3 py-2 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">⚠️ {error}</div>}
       <div className="grid grid-cols-12 gap-3 mb-3">
         <div className="col-span-12 sm:col-span-8"><Label>Name</Label><Input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} /></div>
         <div className="col-span-6 sm:col-span-2"><Label>Price</Label><Input type="number" value={form.price} onChange={e=>setForm({...form,price:e.target.value})} /></div>

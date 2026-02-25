@@ -74,6 +74,7 @@ export default function Insights() {
     topCustomers: [],
   });
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   const [customers, setCustomers] = useState([]);
   const [selCustomer, setSelCustomer] = useState("");
@@ -81,9 +82,12 @@ export default function Insights() {
 
   async function loadSummary() {
     setLoading(true);
+    setError(null);
     try {
       const data = await getInsightsSummary({ dateFrom, dateTo });
       setSummary(data || { monthly: [], topProducts: [], topCustomers: [] });
+    } catch (e) {
+      setError(e.message);
     } finally {
       setLoading(false);
     }
@@ -96,7 +100,7 @@ export default function Insights() {
       const items = Array.isArray(data) ? data : data?.items ?? [];
       setCustomers(items);
     } catch (e) {
-      console.error("Failed to load customers", e);
+      setError(e.message);
       setCustomers([]);
     }
   }
@@ -135,6 +139,7 @@ export default function Insights() {
 
   return (
     <div className="max-w-6xl mx-auto">
+      {error && <div className="mx-4 sm:mx-0 mt-4 px-3 py-2 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">⚠️ {error}</div>}
       <Section
         title="Insights & Reports"
         right={

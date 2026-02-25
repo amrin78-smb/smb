@@ -99,9 +99,11 @@ export default function Daily() {
   const [loading, setLoading] = useState(false);
   const [customers, setCustomers] = useState([]);
   const [copiedId, setCopiedId] = useState(null); // tracks which customer was just copied
+  const [error, setError] = useState(null);
 
   async function load() {
     setLoading(true);
+    setError(null);
     try {
       const [os, cs] = await Promise.all([
         listOrdersByDate(date),
@@ -110,7 +112,7 @@ export default function Daily() {
       setOrders(Array.isArray(os) ? os : []);
       setCustomers(Array.isArray(cs) ? cs : []);
     } catch (e) {
-      console.error(e);
+      setError(e.message);
       setOrders([]);
       setCustomers([]);
     } finally {
@@ -135,6 +137,7 @@ export default function Daily() {
 
   return (
     <div className="max-w-6xl mx-auto">
+      {error && <div className="mx-4 sm:mx-0 mt-4 px-3 py-2 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">⚠️ {error}</div>}
       {/* ONE top section that includes date, totals, and the items table */}
       <Section
         title="Daily Summary"

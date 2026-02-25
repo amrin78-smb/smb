@@ -89,13 +89,14 @@ export default function Orders() {
   const [editItems, setEditItems] = useState([]);
   const [editDeliveryFee, setEditDeliveryFee] = useState(0);
   const [editQ, setEditQ] = useState("");
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     (async () => {
       const [ps, cs, ms] = await Promise.all([listProducts(), listCustomers(), listMonths()]);
       setProducts(ps); setCustomers(cs); setMonths(ms);
       if (ms[0]) setSelectedMonth(ms[0]);
-    })().catch(console.error);
+    })().catch(e => setError(e.message));
   }, []);
 
   useEffect(() => {
@@ -104,12 +105,12 @@ export default function Orders() {
       const ds = await listDaysInMonth(selectedMonth);
       setDays(ds);
       if (ds[0]) setSelectedDay(ds[0]);
-    })().catch(console.error);
+    })().catch(e => setError(e.message));
   }, [selectedMonth]);
 
   useEffect(() => {
     if (!selectedDay) { setDayOrders([]); return; }
-    (async () => setDayOrders(await listOrdersByDate(selectedDay)))().catch(console.error);
+    (async () => setDayOrders(await listOrdersByDate(selectedDay)))().catch(e => setError(e.message));
   }, [selectedDay]);
 
   const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products]);
@@ -175,7 +176,7 @@ export default function Orders() {
       setDayOrders(await listOrdersByDate(date));
       alert("Order saved / consolidated");
     } catch (e) {
-      console.error(e);
+      setError(e.message);
       alert("Failed to save: " + (e?.message || String(e)));
     }
   }
@@ -210,7 +211,7 @@ export default function Orders() {
       setDayOrders(await listOrdersByDate(editOrder.date));
       alert("Order updated");
     } catch (e) {
-      console.error(e);
+      setError(e.message);
       alert("Failed to update: " + (e?.message || String(e)));
     }
   }
@@ -259,7 +260,7 @@ async function downloadInvoice(o) {
 
     URL.revokeObjectURL(url);
   } catch (e) {
-    console.error(e);
+    setError(e.message);
     alert("Failed to generate invoice Excel: " + (e?.message || String(e)));
   }
 }
@@ -276,6 +277,7 @@ async function downloadInvoice(o) {
 
   return (
     <>
+      {error && <div className="w-full max-w-6xl mx-auto mt-4 px-3 py-2 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">⚠️ {error}</div>}
       {/* Create Order */}
       <Section title="Create Order">
         <div className="grid grid-cols-12 gap-3">
