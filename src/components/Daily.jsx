@@ -16,7 +16,7 @@ function generateSummary(displayName, rows, deliveryTotal, grand, address, date)
   const fullDate = d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 
   const itemLines = rows
-    .map((r) => `• ${r.name} x${r.qty} — ฿${Number(r.amount).toFixed(0)}`)
+    .map((r) => `• ${r.name} x ${r.qty} — ฿${Number(r.amount).toFixed(0)}`)
     .join("\n");
 
   const subtotal     = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
