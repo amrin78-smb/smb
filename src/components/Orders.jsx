@@ -27,6 +27,20 @@ const Select = ({ className = "", children, ...props }) => (
 );
 const Label = ({ children }) => (<label className="text-sm text-gray-600">{children}</label>);
 
+/* Delivery time options — 8:00 AM to 10:00 PM every 30 mins */
+const DELIVERY_TIMES = (() => {
+  const times = [""];
+  for (let h = 8; h <= 22; h++) {
+    for (let m = 0; m < 60; m += 30) {
+      if (h === 22 && m > 0) break;
+      const suffix = h < 12 ? "AM" : "PM";
+      const hour = h > 12 ? h - 12 : h === 0 ? 12 : h;
+      times.push(`${hour}:${m === 0 ? "00" : m} ${suffix}`);
+    }
+  }
+  return times;
+})();
+
 /* Big, readable customer card */
 function SelectedCustomerCard({ customer, onClear }) {
   if (!customer) return null;
@@ -69,6 +83,7 @@ export default function Orders() {
   const [date, setDate] = useState(todayStr());
   const [notes, setNotes] = useState("");
   const [deliveryFee, setDeliveryFee] = useState(0);
+  const [deliveryTime, setDeliveryTime] = useState("");
   const [items, setItems] = useState([]);
   const [q, setQ] = useState("");
 
@@ -88,6 +103,7 @@ export default function Orders() {
   const [editOrder, setEditOrder] = useState(null);
   const [editItems, setEditItems] = useState([]);
   const [editDeliveryFee, setEditDeliveryFee] = useState(0);
+  const [editDeliveryTime, setEditDeliveryTime] = useState("");
   const [editQ, setEditQ] = useState("");
   const [error, setError] = useState(null);
 
@@ -165,10 +181,11 @@ export default function Orders() {
         date,
         customerId: Number(customerId),
         deliveryFee: Number(deliveryFee || 0),
+        deliveryTime,
         notes,
         items: items.map(it => ({ productId: it.productId, qty: Number(it.qty), price: Number(it.price) })),
       });
-      setItems([]); setDeliveryFee(0); setNotes("");
+      setItems([]); setDeliveryFee(0); setDeliveryTime(""); setNotes("");
       const ms = await listMonths(); setMonths(ms);
       setSelectedMonth(date.slice(0,7));
       const ds = await listDaysInMonth(date.slice(0,7)); setDays(ds);
@@ -185,6 +202,7 @@ export default function Orders() {
     setEditOrder(o);
     setEditItems((o.items || []).map(it => ({ productId: it.productId, qty: it.qty, price: it.price })));
     setEditDeliveryFee(Number(o.deliveryFee || 0));
+    setEditDeliveryTime(o.deliveryTime || "");
     setEditQ(""); setEditOpen(true);
   }
   function updateEditItem(i, patch) { setEditItems(prev => prev.map((it, idx) => idx === i ? { ...it, ...patch } : it)); }
@@ -204,6 +222,7 @@ export default function Orders() {
         date: editOrder.date,
         customerId: editOrder.customerId,
         deliveryFee: Number(editDeliveryFee || 0),
+        deliveryTime: editDeliveryTime,
         notes: editOrder.notes || "",
         items: editItems.map(it => ({ productId: it.productId, qty: Number(it.qty), price: Number(it.price) })),
       });
@@ -330,6 +349,14 @@ async function downloadInvoice(o) {
           <div className="col-span-6 sm:col-span-2">
             <Label>Delivery Fee</Label>
             <Input type="number" value={deliveryFee} onChange={e=>setDeliveryFee(Number(e.target.value)||0)} />
+          </div>
+          <div className="col-span-6 sm:col-span-2">
+            <Label>Delivery Time</Label>
+            <Select value={deliveryTime} onChange={e => setDeliveryTime(e.target.value)}>
+              {DELIVERY_TIMES.map(t => (
+                <option key={t} value={t}>{t || "— select —"}</option>
+              ))}
+            </Select>
           </div>
           <div className="col-span-6 sm:col-span-12">
             <Label>Notes</Label>
@@ -619,6 +646,14 @@ async function downloadInvoice(o) {
               <div className="col-span-12 sm:col-span-3">
                 <Label>Delivery Fee</Label>
                 <Input type="number" value={editDeliveryFee} onChange={e=>setEditDeliveryFee(Number(e.target.value)||0)} />
+              </div>
+              <div className="col-span-12 sm:col-span-3">
+                <Label>Delivery Time</Label>
+                <Select value={editDeliveryTime} onChange={e => setEditDeliveryTime(e.target.value)}>
+                  {DELIVERY_TIMES.map(t => (
+                    <option key={t} value={t}>{t || "— select —"}</option>
+                  ))}
+                </Select>
               </div>
             </div>
 

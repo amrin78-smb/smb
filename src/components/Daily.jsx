@@ -9,7 +9,7 @@ const SHOP_BANK_NAME   = "Krungsri (Bank of Ayudhaya)";
 const SHOP_ACCOUNT     = "Nur Edalin";
 
 /* ---------- Generate customer order summary message ---------- */
-function generateSummary(displayName, rows, deliveryTotal, grand, address, date) {
+function generateSummary(displayName, rows, deliveryTotal, grand, address, date, deliveryTime) {
   // Format date as "Monday, 23 February 2026"
   const d = new Date(date + "T00:00:00");
   const dayName  = d.toLocaleDateString("en-GB", { weekday: "long" });
@@ -24,10 +24,14 @@ function generateSummary(displayName, rows, deliveryTotal, grand, address, date)
     ? `Delivery (Grab Express to ${address}): ฿${Number(deliveryTotal).toFixed(0)}`
     : `Delivery: ฿${Number(deliveryTotal).toFixed(0)}`;
 
+  const dateLabel = deliveryTime
+    ? `${dayName}, ${fullDate} (from ${deliveryTime} onwards)`
+    : `${dayName}, ${fullDate}`;
+
   return [
     `Hi ${displayName} 👋`,
     ``,
-    `Here's your order summary for ${dayName}, ${fullDate}:`,
+    `Here's your order summary for ${dateLabel}:`,
     ``,
     itemLines,
     ``,
@@ -189,11 +193,13 @@ export default function Daily() {
         {[...byCustomer.entries()].map(([customerId, list]) => {
           const itemsMap = new Map();
           let deliveryTotal = 0;
+          let deliveryTime = "";
 
           // Build item rows aggregated across this customer's orders.
           // Collect notes per item from the parent order's notes field.
           for (const o of list) {
             deliveryTotal += Number(o.deliveryFee || 0);
+            if (!deliveryTime && o.deliveryTime) deliveryTime = o.deliveryTime;
             for (const it of (o.items || [])) {
               const key = String(it.productId ?? it.productName ?? "");
               const prev = itemsMap.get(key) || { name: it.productName || "Unknown", qty: 0, amount: 0, notes: new Set() };
@@ -221,6 +227,7 @@ export default function Daily() {
                 <div className="text-sm text-gray-700 mb-3">
                   <div><span className="font-medium">Phone:</span> {c?.phone || "—"}</div>
                   <div><span className="font-medium">Address:</span> {c?.address || "—"}</div>
+                  {deliveryTime && <div><span className="font-medium">Delivery Time:</span> {deliveryTime}</div>}
                 </div>
                 {/* Copy Summary button */}
                 <div className="mb-3">
@@ -233,7 +240,8 @@ export default function Daily() {
                         deliveryTotal,
                         grand,
                         c?.address || "",
-                        date
+                        date,
+                        deliveryTime
                       );
                       navigator.clipboard.writeText(msg).then(() => {
                         setCopiedId(customerId);
