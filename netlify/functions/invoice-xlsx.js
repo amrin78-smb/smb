@@ -24,7 +24,7 @@ import { requireAuth } from "./auth.js";
 const corsHeaders = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "POST, OPTIONS",
-  "access-control-allow-headers": "content-type, x-smb-user",
+  "access-control-allow-headers": "content-type, authorization",
 };
 
 function json(statusCode, obj) {
