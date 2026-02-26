@@ -244,8 +244,8 @@ async function downloadInvoice(o) {
     const cust = customersMap[o.customerId] || null;
 
     const headers = { "content-type": "application/json" };
-    const u = localStorage.getItem("smb_user");
-    if (u) headers["x-smb-user"] = u;
+    const token = localStorage.getItem("smb_token");
+    if (token) headers["authorization"] = `Bearer ${token}`;
 
     const res = await fetch("/.netlify/functions/invoice-xlsx", {
       method: "POST",
