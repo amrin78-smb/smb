@@ -77,6 +77,7 @@ export const handler = async (event) => {
           select o.id, o.date, o.customer_id as "customerId",
                  o.subtotal, o.delivery_fee as "deliveryFee", o.total,
                  o.notes, o.order_code as "orderCode",
+                 o.delivery_time as "deliveryTime",
                  c.name as "customerName"
           from orders o
           join customers c on c.id = o.customer_id
@@ -106,7 +107,8 @@ export const handler = async (event) => {
       const rows = await sql`
         select id, date, customer_id as "customerId",
                subtotal, delivery_fee as "deliveryFee", total,
-               notes, order_code as "orderCode"
+               notes, order_code as "orderCode",
+               delivery_time as "deliveryTime"
         from orders
         order by id desc
         limit 100
@@ -118,7 +120,7 @@ export const handler = async (event) => {
     if (httpMethod === "POST") {
       // NOTE: do NOT default deliveryFee here; keep undefined unless client sends it.
       const body = JSON.parse(event.body || "{}");
-      const { date, customerId, items = [], deliveryFee, notes = "" } = body;
+      const { date, customerId, items = [], deliveryFee, notes = "", deliveryTime = "" } = body;
 
       if (!date) return err(400, "date is required");
       if (!customerId) return err(400, "customerId is required");
@@ -180,12 +182,13 @@ export const handler = async (event) => {
           set subtotal     = ${subtotal},
               delivery_fee = ${fee},
               total        = ${Number(subtotal) + Number(fee)},
-              notes        = ${newNotes}
+              notes        = ${newNotes},
+              delivery_time = ${deliveryTime || ""}
           where id = ${o.id}
         `;
 
         const [updated] = await sql`
-          select id, date, customer_id as "customerId", subtotal, delivery_fee as "deliveryFee", total, notes, order_code as "orderCode"
+          select id, date, customer_id as "customerId", subtotal, delivery_fee as "deliveryFee", total, notes, order_code as "orderCode", delivery_time as "deliveryTime"
           from orders where id = ${o.id}
         `;
         return ok(updated, 201);
@@ -203,9 +206,9 @@ export const handler = async (event) => {
       const initialFee = toNumber(deliveryFee); // new orders can default to 0
 
       const [created] = await sql`
-        insert into orders (date, customer_id, subtotal, delivery_fee, total, notes, order_code)
-        values (${date}, ${customerId}, 0, ${initialFee}, 0, ${notes}, ${orderCode})
-        returning id, date, customer_id as "customerId", subtotal, delivery_fee as "deliveryFee", total, notes, order_code as "orderCode"
+        insert into orders (date, customer_id, subtotal, delivery_fee, total, notes, order_code, delivery_time)
+        values (${date}, ${customerId}, 0, ${initialFee}, 0, ${notes}, ${orderCode}, ${deliveryTime || ""})
+        returning id, date, customer_id as "customerId", subtotal, delivery_fee as "deliveryFee", total, notes, order_code as "orderCode", delivery_time as "deliveryTime"
       `;
 
       for (const it of items) {
@@ -227,7 +230,7 @@ export const handler = async (event) => {
       `;
 
       const [final] = await sql`
-        select id, date, customer_id as "customerId", subtotal, delivery_fee as "deliveryFee", total, notes, order_code as "orderCode"
+        select id, date, customer_id as "customerId", subtotal, delivery_fee as "deliveryFee", total, notes, order_code as "orderCode", delivery_time as "deliveryTime"
         from orders where id = ${created.id}
       `;
       return ok(final, 201);
@@ -236,7 +239,7 @@ export const handler = async (event) => {
     // -------- PUT: replace order header + items (full edit) --------
     if (httpMethod === "PUT") {
       const body = JSON.parse(event.body || "{}");
-      const { id, date, customerId, deliveryFee = 0, notes = "", items = [] } = body;
+      const { id, date, customerId, deliveryFee = 0, notes = "", deliveryTime = "", items = [] } = body;
 
       if (!id) return err(400, "id is required");
       if (!date) return err(400, "date is required");
@@ -247,7 +250,8 @@ export const handler = async (event) => {
         set date = ${date},
             customer_id = ${customerId},
             delivery_fee = ${toNumber(deliveryFee)},
-            notes = ${notes}
+            notes = ${notes},
+            delivery_time = ${deliveryTime || ""}
         where id = ${id}
       `;
 
